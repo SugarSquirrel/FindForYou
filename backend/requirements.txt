@@ -7,9 +7,13 @@ uvicorn[standard]>=0.24.0
 # 資料驗證
 pydantic>=2.5.0
 
-# 電腦視覺
-ultralytics>=8.0.0
+# 電腦視覺 - YOLO12
+ultralytics>=8.3.0
 opencv-python>=4.8.0
+
+# 特徵提取 - DINOv2
+torch>=2.0.0
+torchvision>=0.15.0
 
 # 工具
 python-multipart>=0.0.6

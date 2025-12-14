@@ -15,7 +15,7 @@
             padding: 20px;
         }
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
         }
         .header {
@@ -35,6 +35,7 @@
             display: inline-flex;
             align-items: center;
             gap: 8px;
+            transition: all 0.2s;
         }
         .back-btn:hover { background: rgba(255,255,255,0.2); }
         h1 { font-size: 24px; }
@@ -53,40 +54,13 @@
             align-items: center;
             gap: 10px;
         }
-        
-        .camera-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .camera-item {
-            display: grid;
-            grid-template-columns: 80px 1fr 1fr auto;
-            gap: 12px;
-            align-items: center;
-            padding: 16px;
-            background: rgba(0,0,0,0.2);
-            border-radius: 12px;
-        }
-        .camera-id {
-            font-weight: bold;
-            color: #38ef7d;
-        }
-        input, select {
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
-            color: #fff;
-            padding: 10px 14px;
-            border-radius: 8px;
+        .card p.desc {
+            color: #aaa;
+            margin-bottom: 20px;
             font-size: 14px;
-            width: 100%;
         }
-        input:focus, select:focus {
-            outline: none;
-            border-color: #38ef7d;
-        }
-        input::placeholder { color: rgba(255,255,255,0.5); }
         
+        /* 按鈕樣式 */
         .btn {
             padding: 10px 20px;
             border: none;
@@ -101,50 +75,100 @@
             color: #fff;
         }
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(56,239,125,0.4); }
-        .btn-danger {
-            background: #f5576c;
-            color: #fff;
-        }
-        .btn-secondary {
+        .btn-danger { background: #f5576c; color: #fff; }
+        .btn-secondary { background: rgba(255,255,255,0.1); color: #fff; }
+        .btn-preview { background: #4a90d9; color: #fff; padding: 8px 12px; font-size: 12px; }
+        
+        /* 輸入框 */
+        input, select, textarea {
             background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
             color: #fff;
-        }
-        
-        .add-camera-form {
-            display: grid;
-            grid-template-columns: 100px 1fr 1fr auto;
-            gap: 12px;
-            padding: 16px;
-            background: rgba(56,239,125,0.1);
-            border-radius: 12px;
-            border: 2px dashed rgba(56,239,125,0.3);
-            margin-top: 16px;
-        }
-        
-        .toast {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #38ef7d;
-            color: #000;
-            padding: 12px 24px;
+            padding: 10px 14px;
             border-radius: 8px;
-            animation: slideIn 0.3s ease;
+            font-size: 14px;
+            width: 100%;
         }
-        @keyframes slideIn {
-            from { transform: translateY(100px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #38ef7d;
         }
+        input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.5); }
         
-        .status {
-            padding: 4px 12px;
+        /* 物品卡片 */
+        .object-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .object-card {
+            background: rgba(0,0,0,0.3);
             border-radius: 12px;
-            font-size: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
         }
-        .status.active { background: rgba(56,239,125,0.2); color: #38ef7d; }
-        .status.inactive { background: rgba(245,87,108,0.2); color: #f5576c; }
+        .object-card:hover {
+            border-color: #38ef7d;
+            transform: translateY(-2px);
+        }
+        .object-card img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            background: rgba(255,255,255,0.05);
+        }
+        .object-card .info {
+            padding: 12px;
+        }
+        .object-card .name {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        .object-card .meta {
+            font-size: 12px;
+            color: #888;
+        }
+        .object-card .badge {
+            display: inline-block;
+            background: rgba(56,239,125,0.2);
+            color: #38ef7d;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            margin-top: 6px;
+        }
         
-        .preview-modal {
+        /* 新增物品按鈕 */
+        .add-object-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            background: rgba(56,239,125,0.1);
+            border: 2px dashed rgba(56,239,125,0.3);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .add-object-btn:hover {
+            background: rgba(56,239,125,0.2);
+            border-color: #38ef7d;
+        }
+        .add-object-btn .icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        .add-object-btn span {
+            color: #38ef7d;
+            font-weight: 500;
+        }
+        
+        /* Modal */
+        .modal {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(0,0,0,0.9);
@@ -153,28 +177,77 @@
             justify-content: center;
             z-index: 1000;
         }
-        .preview-content {
-            background: rgba(30,30,50,0.95);
+        .modal-content {
+            background: rgba(30,30,50,0.98);
             border-radius: 16px;
-            padding: 20px;
-            max-width: 90%;
-            text-align: center;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
         }
-        .preview-content img {
-            max-width: 100%;
-            border-radius: 8px;
-            margin-bottom: 15px;
-        }
-        .btn-group {
+        .modal-content h3 {
+            margin-bottom: 20px;
             display: flex;
-            gap: 8px;
+            align-items: center;
+            gap: 10px;
         }
-        .btn-preview {
-            background: #4a90d9;
-            color: #fff;
-            padding: 8px 12px;
-            font-size: 12px;
+        .modal-content .form-group {
+            margin-bottom: 16px;
         }
+        .modal-content label {
+            display: block;
+            color: #aaa;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+        .modal-content .btn-group {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        
+        /* 圖片上傳區域 */
+        .upload-area {
+            border: 2px dashed rgba(255,255,255,0.3);
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .upload-area:hover {
+            border-color: #38ef7d;
+            background: rgba(56,239,125,0.1);
+        }
+        .upload-area.has-image {
+            padding: 10px;
+        }
+        .upload-area img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+        }
+        .upload-area .placeholder {
+            color: #888;
+        }
+        .upload-area .placeholder .icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        /* 攝影機列表 */
+        .camera-list { display: flex; flex-direction: column; gap: 12px; }
+        .camera-item {
+            display: grid;
+            grid-template-columns: 80px 1fr 1fr auto;
+            gap: 12px;
+            align-items: center;
+            padding: 16px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+        }
+        .camera-id { font-weight: bold; color: #38ef7d; }
+        .btn-group { display: flex; gap: 8px; }
         
         /* Toggle Switch */
         .switch {
@@ -182,11 +255,7 @@
             width: 60px;
             height: 34px;
         }
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
+        .switch input { opacity: 0; width: 0; height: 0; }
         .slider {
             position: absolute;
             cursor: pointer;
@@ -206,12 +275,37 @@
             transition: .4s;
             border-radius: 50%;
         }
-        input:checked + .slider {
-            background-color: #38ef7d;
+        input:checked + .slider { background-color: #38ef7d; }
+        input:checked + .slider:before { transform: translateX(26px); }
+        
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #38ef7d;
+            color: #000;
+            padding: 12px 24px;
+            border-radius: 8px;
+            animation: slideIn 0.3s ease;
+            z-index: 2000;
         }
-        input:checked + .slider:before {
-            transform: translateX(26px);
+        @keyframes slideIn {
+            from { transform: translateY(100px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
+        
+        /* 狀態標籤 */
+        .status { padding: 4px 12px; border-radius: 12px; font-size: 12px; }
+        .status.active { background: rgba(56,239,125,0.2); color: #38ef7d; }
+        .status.inactive { background: rgba(245,87,108,0.2); color: #f5576c; }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
@@ -221,15 +315,24 @@
             <h1>⚙️ 設定</h1>
         </div>
         
+        <!-- 我的物品 -->
         <div class="card">
-            <h2>📹 攝影機配置</h2>
-            <p style="color:#aaa; margin-bottom:20px;">設定每個攝影機的名稱與所在位置，偵測結果會自動使用攝影機位置。</p>
+            <h2>📦 我的物品</h2>
+            <p class="desc">註冊你的個人物品，系統會透過 AI 特徵比對來識別它們。拍攝多張不同角度的照片可提高識別準確度。</p>
             
-            <div class="camera-list" id="cameraList">
+            <div class="object-grid" id="objectGrid">
                 <!-- 動態填入 -->
             </div>
+        </div>
+        
+        <!-- 攝影機配置 -->
+        <div class="card">
+            <h2>📹 攝影機配置</h2>
+            <p class="desc">設定每個攝影機的名稱與所在位置，偵測結果會自動使用攝影機位置。</p>
             
-            <div class="add-camera-form" id="addForm">
+            <div class="camera-list" id="cameraList"></div>
+            
+            <div style="display:grid; grid-template-columns: 100px 1fr 1fr auto; gap:12px; padding:16px; background:rgba(56,239,125,0.1); border-radius:12px; border:2px dashed rgba(56,239,125,0.3); margin-top:16px;">
                 <input type="number" id="newCameraId" placeholder="編號" min="0" max="10">
                 <input type="text" id="newCameraName" placeholder="攝影機名稱">
                 <input type="text" id="newCameraLocation" placeholder="所在位置">
@@ -237,42 +340,22 @@
             </div>
         </div>
         
+        <!-- 偵測到的攝影機 -->
         <div class="card">
             <h2>🔍 偵測到的攝影機</h2>
-            <p style="color:#aaa; margin-bottom:20px;">系統偵測到的可用攝影機清單</p>
+            <p class="desc">系統偵測到的可用攝影機清單</p>
             <div id="availableCameras">載入中...</div>
         </div>
         
-        <div class="card">
-            <h2>🏷️ 偵測類別管理</h2>
-            <p style="color:#aaa; margin-bottom:20px;">設定 YOLO-World 要偵測的物品類別及中文名稱。點擊類別可編輯提示詞。</p>
-            
-            <div id="classList" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;">
-                <!-- 動態填入 -->
-            </div>
-            
-            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr auto; gap:12px; padding:16px; background:rgba(100,149,237,0.1); border-radius:12px; border:2px dashed rgba(100,149,237,0.3);">
-                <input type="text" id="newClassId" placeholder="類別 ID (如: mouse)">
-                <input type="text" id="newClassZh" placeholder="中文名稱 (如: 滑鼠)">
-                <input type="text" id="newClassPrompts" placeholder="提示詞 (逗號分隔)">
-                <button class="btn btn-primary" onclick="addClassWithPrompts()">新增類別</button>
-            </div>
-            
-            <div style="margin-top:15px;">
-                <button class="btn btn-secondary" onclick="reloadModel()" style="width:100%;">
-                    🔄 重新載入模型（套用新類別）
-                </button>
-            </div>
-        </div>
-        
+        <!-- 自動偵測 -->
         <div class="card">
             <h2>⏱️ 自動偵測</h2>
-            <p style="color:#aaa; margin-bottom:20px;">啟用後系統會定時自動掃描攝影機並記錄物品位置</p>
+            <p class="desc">啟用後系統會定時自動掃描攝影機並記錄物品位置</p>
             
             <div style="display:flex; align-items:center; justify-content:space-between; padding:16px; background:rgba(0,0,0,0.2); border-radius:12px;">
                 <div>
                     <span style="font-size:16px;">自動偵測</span>
-                    <span id="schedulerStatus" style="margin-left:10px; padding:4px 12px; border-radius:12px; font-size:12px; background:rgba(245,87,108,0.2); color:#f5576c;">已停止</span>
+                    <span id="schedulerStatus" class="status inactive">已停止</span>
                 </div>
                 <label class="switch">
                     <input type="checkbox" id="schedulerSwitch" onchange="toggleScheduler()">
@@ -286,13 +369,12 @@
             </div>
         </div>
         
+        <!-- 常用物品快捷 -->
         <div class="card">
             <h2>⭐ 常用物品快捷</h2>
-            <p style="color:#aaa; margin-bottom:20px;">自訂首頁顯示的常用物品快捷按鈕</p>
+            <p class="desc">自訂首頁顯示的常用物品快捷按鈕</p>
             
-            <div id="quickItemsList" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;">
-                <!-- 動態填入 -->
-            </div>
+            <div id="quickItemsList" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;"></div>
             
             <div style="display:grid; grid-template-columns: 1fr 1fr 80px auto; gap:12px; padding:16px; background:rgba(255,215,0,0.1); border-radius:12px; border:2px dashed rgba(255,215,0,0.3);">
                 <input type="text" id="newQuickItemName" placeholder="物品名稱">
@@ -302,9 +384,326 @@
             </div>
         </div>
     </div>
-    
+
     <script>
-        const API_BASE = 'http://localhost:8000';
+        const API_BASE = '';  // Same origin
+        
+        // ========================================
+        // 物品管理功能 (新)
+        // ========================================
+        
+        async function loadObjects() {
+            try {
+                const res = await fetch(`${API_BASE}/api/objects`);
+                const data = await res.json();
+                renderObjectGrid(data.objects || []);
+            } catch (e) {
+                console.error('載入物品失敗', e);
+                document.getElementById('objectGrid').innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">⚠️</div>
+                        <p>無法連接後端服務</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function renderObjectGrid(objects) {
+            const container = document.getElementById('objectGrid');
+            
+            let html = objects.map(obj => `
+                <div class="object-card" onclick="showObjectDetail('${obj.id}')">
+                    <img src="${obj.thumbnail || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23333%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2255%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2230%22>📦</text></svg>'}" alt="${obj.name_zh}">
+                    <div class="info">
+                        <div class="name">${obj.name_zh}</div>
+                        <div class="meta">${obj.name}</div>
+                        <div class="badge">${obj.embedding_count} 張照片</div>
+                    </div>
+                </div>
+            `).join('');
+            
+            // 新增物品按鈕
+            html += `
+                <div class="add-object-btn" onclick="showRegisterModal()">
+                    <div class="icon">➕</div>
+                    <span>新增物品</span>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+        
+        // 顯示註冊 Modal
+        function showRegisterModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.id = 'registerModal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h3>📦 註冊新物品</h3>
+                    
+                    <div class="form-group">
+                        <label>物品照片</label>
+                        <div class="upload-area" id="uploadArea" onclick="document.getElementById('imageInput').click()">
+                            <div class="placeholder">
+                                <div class="icon">📷</div>
+                                <div>點擊上傳照片</div>
+                            </div>
+                        </div>
+                        <input type="file" id="imageInput" accept="image/*" style="display:none" onchange="previewImage(this)">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>物品名稱 (英文 ID)</label>
+                        <input type="text" id="regName" placeholder="例如: my_wallet">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>中文名稱</label>
+                        <input type="text" id="regNameZh" placeholder="例如: 我的錢包">
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="closeModal('registerModal')">取消</button>
+                        <button class="btn btn-primary" onclick="registerObject()">註冊</button>
+                    </div>
+                </div>
+            `;
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal('registerModal');
+            });
+            
+            document.body.appendChild(modal);
+        }
+        
+        function previewImage(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const area = document.getElementById('uploadArea');
+                    area.classList.add('has-image');
+                    area.innerHTML = `<img src="${e.target.result}" alt="預覽">`;
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+        
+        async function registerObject() {
+            const imageInput = document.getElementById('imageInput');
+            const name = document.getElementById('regName').value.trim();
+            const nameZh = document.getElementById('regNameZh').value.trim();
+            
+            if (!imageInput.files || !imageInput.files[0]) {
+                showToast('請選擇照片');
+                return;
+            }
+            if (!name) {
+                showToast('請輸入物品名稱');
+                return;
+            }
+            if (!nameZh) {
+                showToast('請輸入中文名稱');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('image', imageInput.files[0]);
+            formData.append('name', name);
+            formData.append('name_zh', nameZh);
+            
+            try {
+                showToast('註冊中...');
+                const res = await fetch(`${API_BASE}/api/objects/register`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast(`已註冊: ${nameZh}`);
+                    closeModal('registerModal');
+                    loadObjects();
+                } else {
+                    showToast(data.detail || '註冊失敗');
+                }
+            } catch (e) {
+                console.error('註冊失敗', e);
+                showToast('註冊失敗');
+            }
+        }
+        
+        // 顯示物品詳情
+        async function showObjectDetail(objId) {
+            try {
+                const res = await fetch(`${API_BASE}/api/objects/${objId}`);
+                const data = await res.json();
+                
+                if (!data.success) {
+                    showToast('載入失敗');
+                    return;
+                }
+                
+                const obj = data.object;
+                
+                const modal = document.createElement('div');
+                modal.className = 'modal';
+                modal.id = 'detailModal';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <h3>📦 ${obj.name_zh}</h3>
+                        
+                        <div style="margin-bottom:16px;">
+                            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                ${obj.images.map(img => `
+                                    <img src="${img}" style="width:80px; height:80px; object-fit:cover; border-radius:8px;">
+                                `).join('')}
+                            </div>
+                        </div>
+                        
+                        <div style="background:rgba(0,0,0,0.2); padding:12px; border-radius:8px; margin-bottom:16px;">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                                <span style="color:#888;">ID</span>
+                                <span>${obj.id}</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                                <span style="color:#888;">英文名稱</span>
+                                <span>${obj.name}</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between;">
+                                <span style="color:#888;">照片數量</span>
+                                <span>${obj.embedding_count}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="btn-group" style="justify-content:space-between;">
+                            <button class="btn btn-danger" onclick="deleteObject('${obj.id}')">刪除物品</button>
+                            <div style="display:flex; gap:8px;">
+                                <button class="btn btn-secondary" onclick="closeModal('detailModal')">關閉</button>
+                                <button class="btn btn-primary" onclick="addMorePhotos('${obj.id}')">新增照片</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) closeModal('detailModal');
+                });
+                
+                document.body.appendChild(modal);
+            } catch (e) {
+                console.error('載入物品詳情失敗', e);
+                showToast('載入失敗');
+            }
+        }
+        
+        function addMorePhotos(objId) {
+            closeModal('detailModal');
+            
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.id = 'addPhotoModal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h3>📷 新增照片</h3>
+                    
+                    <div class="form-group">
+                        <div class="upload-area" id="uploadAreaAdd" onclick="document.getElementById('imageInputAdd').click()">
+                            <div class="placeholder">
+                                <div class="icon">📷</div>
+                                <div>點擊上傳照片</div>
+                            </div>
+                        </div>
+                        <input type="file" id="imageInputAdd" accept="image/*" style="display:none" onchange="previewImageAdd(this)">
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="closeModal('addPhotoModal')">取消</button>
+                        <button class="btn btn-primary" onclick="uploadMorePhoto('${objId}')">上傳</button>
+                    </div>
+                </div>
+            `;
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal('addPhotoModal');
+            });
+            
+            document.body.appendChild(modal);
+        }
+        
+        function previewImageAdd(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const area = document.getElementById('uploadAreaAdd');
+                    area.classList.add('has-image');
+                    area.innerHTML = `<img src="${e.target.result}" alt="預覽">`;
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+        
+        async function uploadMorePhoto(objId) {
+            const imageInput = document.getElementById('imageInputAdd');
+            
+            if (!imageInput.files || !imageInput.files[0]) {
+                showToast('請選擇照片');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('image', imageInput.files[0]);
+            
+            try {
+                showToast('上傳中...');
+                const res = await fetch(`${API_BASE}/api/objects/${objId}/images`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast('照片已新增');
+                    closeModal('addPhotoModal');
+                    loadObjects();
+                } else {
+                    showToast(data.detail || '上傳失敗');
+                }
+            } catch (e) {
+                console.error('上傳失敗', e);
+                showToast('上傳失敗');
+            }
+        }
+        
+        async function deleteObject(objId) {
+            if (!confirm('確定要刪除此物品？此操作無法復原。')) return;
+            
+            try {
+                const res = await fetch(`${API_BASE}/api/objects/${objId}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast('已刪除');
+                    closeModal('detailModal');
+                    loadObjects();
+                } else {
+                    showToast('刪除失敗');
+                }
+            } catch (e) {
+                console.error('刪除失敗', e);
+                showToast('刪除失敗');
+            }
+        }
+        
+        function closeModal(id) {
+            document.getElementById(id)?.remove();
+        }
+        
+        // ========================================
+        // 攝影機相關功能
+        // ========================================
         
         async function loadConfig() {
             try {
@@ -346,8 +745,8 @@
             container.innerHTML = entries.map(([id, cam]) => `
                 <div class="camera-item" data-id="${id}">
                     <span class="camera-id">攝影機 ${id}</span>
-                    <input type="text" value="${cam.name}" placeholder="名稱" onchange="updateCamera('${id}', 'name', this.value)">
-                    <input type="text" value="${cam.location}" placeholder="位置" onchange="updateCamera('${id}', 'location', this.value)">
+                    <input type="text" value="${cam.name}" placeholder="名稱" onchange="updateCamera('${id}')">
+                    <input type="text" value="${cam.location}" placeholder="位置" onchange="updateCamera('${id}')">
                     <div class="btn-group">
                         <button class="btn btn-preview" onclick="previewCamera('${id}')">👁 預覽</button>
                         <button class="btn btn-danger" onclick="deleteCamera('${id}')">刪除</button>
@@ -358,44 +757,32 @@
         
         async function previewCamera(id) {
             showToast('載入預覽中...');
-            
             try {
                 const res = await fetch(`${API_BASE}/api/cameras/${id}/preview`);
                 const data = await res.json();
-                
                 if (data.success) {
-                    showPreviewModal(id, data.image);
-                } else {
-                    showToast('無法取得預覽');
+                    const modal = document.createElement('div');
+                    modal.className = 'modal';
+                    modal.id = 'previewModal';
+                    modal.innerHTML = `
+                        <div class="modal-content" style="max-width:700px;">
+                            <h3>📹 攝影機 ${id} 預覽</h3>
+                            <img src="${data.image}" style="width:100%; border-radius:8px; margin-bottom:15px;">
+                            <div class="btn-group">
+                                <button class="btn btn-secondary" onclick="closeModal('previewModal')">關閉</button>
+                                <button class="btn btn-primary" onclick="closeModal('previewModal'); previewCamera('${id}')">重新整理</button>
+                            </div>
+                        </div>
+                    `;
+                    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal('previewModal'); });
+                    document.body.appendChild(modal);
                 }
             } catch (e) {
-                console.error('預覽失敗', e);
                 showToast('預覽失敗');
             }
         }
         
-        function showPreviewModal(cameraId, imageData) {
-            const modal = document.createElement('div');
-            modal.className = 'preview-modal';
-            modal.innerHTML = `
-                <div class="preview-content">
-                    <h3 style="margin-bottom:15px;">📹 攝影機 ${cameraId} 預覽</h3>
-                    <img src="${imageData}" alt="預覽">
-                    <div>
-                        <button class="btn btn-secondary" onclick="this.closest('.preview-modal').remove()">關閉</button>
-                        <button class="btn btn-primary" onclick="previewCamera('${cameraId}'); this.closest('.preview-modal').remove();">重新整理</button>
-                    </div>
-                </div>
-            `;
-            
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) modal.remove();
-            });
-            
-            document.body.appendChild(modal);
-        }
-        
-        async function updateCamera(id, field, value) {
+        async function updateCamera(id) {
             const item = document.querySelector(`.camera-item[data-id="${id}"]`);
             const name = item.querySelectorAll('input')[0].value;
             const location = item.querySelectorAll('input')[1].value;
@@ -405,7 +792,6 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ camera_id: id, name, location, enabled: true })
             });
-            
             showToast('配置已儲存');
         }
         
@@ -432,220 +818,13 @@
         
         async function deleteCamera(id) {
             if (!confirm(`確定要刪除攝影機 ${id} 的配置？`)) return;
-            
             await fetch(`${API_BASE}/api/cameras/config/${id}`, { method: 'DELETE' });
             showToast('配置已刪除');
             loadConfig();
         }
         
-        function showToast(msg) {
-            const toast = document.createElement('div');
-            toast.className = 'toast';
-            toast.textContent = msg;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
-        }
-        
         // ========================================
-        // 類別管理功能
-        // ========================================
-        
-        async function loadClasses() {
-            try {
-                const res = await fetch(`${API_BASE}/api/classes`);
-                const data = await res.json();
-                renderClassList(data.classes || [], data.class_names_zh || {}, data.class_definitions || []);
-            } catch (e) {
-                console.error('載入類別失敗', e);
-            }
-        }
-        
-        // 儲存完整的 class definitions 以便編輯
-        let currentClassDefs = [];
-        
-        function renderClassList(classes, classNamesZh, classDefs) {
-            const container = document.getElementById('classList');
-            currentClassDefs = classDefs || [];
-            
-            if (!classDefs || classDefs.length === 0) {
-                // 舊格式或空列表
-                if (classes.length === 0) {
-                    container.innerHTML = '<p style="color:#aaa;">尚未設定任何類別</p>';
-                    return;
-                }
-                // 舊格式 fallback
-                container.innerHTML = classes.map(cls => {
-                    const zh = classNamesZh[cls] || cls;
-                    return `
-                        <div class="class-tag" style="display: inline-flex; align-items: center; gap: 8px; background: rgba(100,149,237,0.2); padding: 8px 12px; border-radius: 20px; font-size: 14px;">
-                            <span style="color:#6495ed;">${cls}</span>
-                            <span style="color:#aaa;">→</span>
-                            <span style="color:#fff;">${zh}</span>
-                            <button onclick="removeClass('${cls}')" style="background: rgba(245,87,108,0.5); border: none; color: #fff; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; font-size: 12px;">✕</button>
-                        </div>
-                    `;
-                }).join('');
-                return;
-            }
-            
-            // 新格式：顯示 prompts
-            container.innerHTML = classDefs.map(def => {
-                const id = def.id;
-                const zh = def.name_zh || id;
-                const prompts = def.prompts || [id];
-                const promptsShort = prompts.length > 2 ? prompts.slice(0, 2).join(', ') + '...' : prompts.join(', ');
-                
-                return `
-                    <div class="class-tag" style="display: inline-flex; align-items: center; gap: 8px; background: rgba(100,149,237,0.2); padding: 8px 12px; border-radius: 20px; font-size: 14px; cursor: pointer;" onclick="editClassPrompts('${id}')">
-                        <span style="color:#6495ed;">${id}</span>
-                        <span style="color:#aaa;">→</span>
-                        <span style="color:#fff;">${zh}</span>
-                        <span style="color:#888; font-size:11px; margin-left:4px;">(${prompts.length} 提示詞)</span>
-                        <button onclick="event.stopPropagation(); removeClass('${id}')" style="background: rgba(245,87,108,0.5); border: none; color: #fff; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; font-size: 12px;">✕</button>
-                    </div>
-                `;
-            }).join('');
-        }
-        
-        async function addClassWithPrompts() {
-            const id = document.getElementById('newClassId').value.trim().toLowerCase();
-            const zh = document.getElementById('newClassZh').value.trim();
-            const promptsStr = document.getElementById('newClassPrompts').value.trim();
-            
-            if (!id) {
-                alert('請輸入類別 ID');
-                return;
-            }
-            
-            // 解析 prompts
-            let prompts = promptsStr ? promptsStr.split(',').map(p => p.trim()).filter(p => p) : [id];
-            if (prompts.length === 0) prompts = [id];
-            
-            try {
-                await fetch(`${API_BASE}/api/classes/add_full`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        id: id, 
-                        name_zh: zh || id,
-                        prompts: prompts
-                    })
-                });
-                
-                document.getElementById('newClassId').value = '';
-                document.getElementById('newClassZh').value = '';
-                document.getElementById('newClassPrompts').value = '';
-                
-                showToast(`已新增類別: ${id} (${prompts.length} 個提示詞)`);
-                loadClasses();
-            } catch (e) {
-                console.error('新增類別失敗', e);
-                showToast('新增失敗');
-            }
-        }
-        
-        // 編輯類別的 prompts
-        function editClassPrompts(classId) {
-            const def = currentClassDefs.find(d => d.id === classId);
-            if (!def) return;
-            
-            const prompts = def.prompts || [classId];
-            const zh = def.name_zh || classId;
-            
-            // 建立 Modal
-            const modal = document.createElement('div');
-            modal.className = 'preview-modal';
-            modal.innerHTML = `
-                <div class="preview-content" style="max-width:500px; text-align:left;">
-                    <h3 style="margin-bottom:15px;">🏷️ 編輯類別: ${classId}</h3>
-                    <div style="margin-bottom:12px;">
-                        <label style="color:#aaa; display:block; margin-bottom:4px;">中文名稱</label>
-                        <input type="text" id="editClassZh" value="${zh}" style="width:100%;">
-                    </div>
-                    <div style="margin-bottom:12px;">
-                        <label style="color:#aaa; display:block; margin-bottom:4px;">提示詞（每行一個）</label>
-                        <textarea id="editClassPrompts" rows="6" style="width:100%; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#fff; padding:10px; border-radius:8px;">${prompts.join('\n')}</textarea>
-                    </div>
-                    <div style="display:flex; gap:8px; justify-content:flex-end;">
-                        <button class="btn btn-secondary" onclick="this.closest('.preview-modal').remove()">取消</button>
-                        <button class="btn btn-primary" onclick="saveClassPrompts('${classId}')">儲存</button>
-                    </div>
-                </div>
-            `;
-            
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) modal.remove();
-            });
-            
-            document.body.appendChild(modal);
-        }
-        
-        async function saveClassPrompts(classId) {
-            const zh = document.getElementById('editClassZh').value.trim();
-            const promptsText = document.getElementById('editClassPrompts').value.trim();
-            const prompts = promptsText.split('\n').map(p => p.trim()).filter(p => p);
-            
-            if (prompts.length === 0) {
-                alert('至少需要一個提示詞');
-                return;
-            }
-            
-            try {
-                await fetch(`${API_BASE}/api/classes/update`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        id: classId, 
-                        name_zh: zh || classId,
-                        prompts: prompts
-                    })
-                });
-                
-                document.querySelector('.preview-modal')?.remove();
-                showToast(`已更新類別: ${classId}`);
-                loadClasses();
-            } catch (e) {
-                console.error('更新類別失敗', e);
-                showToast('更新失敗');
-            }
-        }
-        
-        async function removeClass(className) {
-            if (!confirm(`確定要刪除類別「${className}」？`)) return;
-            
-            try {
-                await fetch(`${API_BASE}/api/classes/${className}`, {
-                    method: 'DELETE'
-                });
-                showToast(`已刪除類別: ${className}`);
-                loadClasses();
-            } catch (e) {
-                console.error('刪除類別失敗', e);
-            }
-        }
-        
-        async function reloadModel() {
-            showToast('正在重新載入模型...');
-            
-            try {
-                const res = await fetch(`${API_BASE}/api/classes/reload`, {
-                    method: 'POST'
-                });
-                const data = await res.json();
-                
-                if (data.success) {
-                    showToast('模型已重新載入！');
-                } else {
-                    showToast('重新載入失敗');
-                }
-            } catch (e) {
-                console.error('重新載入失敗', e);
-                showToast('重新載入失敗');
-            }
-        }
-        
-        // ========================================
-        // 自動偵測控制
+        // 排程器控制
         // ========================================
         
         async function loadSchedulerStatus() {
@@ -658,13 +837,11 @@
                 
                 if (data.scheduler_running) {
                     switchEl.checked = true;
-                    statusEl.style.background = 'rgba(56,239,125,0.2)';
-                    statusEl.style.color = '#38ef7d';
+                    statusEl.className = 'status active';
                     statusEl.textContent = '運行中';
                 } else {
                     switchEl.checked = false;
-                    statusEl.style.background = 'rgba(245,87,108,0.2)';
-                    statusEl.style.color = '#f5576c';
+                    statusEl.className = 'status inactive';
                     statusEl.textContent = '已停止';
                 }
             } catch (e) {
@@ -678,26 +855,21 @@
             const action = switchEl.checked ? 'start' : 'stop';
             
             try {
-                const res = await fetch(`${API_BASE}/api/scheduler/${action}`, {
-                    method: 'POST'
-                });
+                const res = await fetch(`${API_BASE}/api/scheduler/${action}`, { method: 'POST' });
                 const data = await res.json();
                 
                 if (data.success) {
                     if (switchEl.checked) {
-                        statusEl.style.background = 'rgba(56,239,125,0.2)';
-                        statusEl.style.color = '#38ef7d';
+                        statusEl.className = 'status active';
                         statusEl.textContent = '運行中';
                         showToast('自動偵測已啟動');
                     } else {
-                        statusEl.style.background = 'rgba(245,87,108,0.2)';
-                        statusEl.style.color = '#f5576c';
+                        statusEl.className = 'status inactive';
                         statusEl.textContent = '已停止';
                         showToast('自動偵測已停止');
                     }
                 }
             } catch (e) {
-                console.error('切換排程器失敗', e);
                 switchEl.checked = !switchEl.checked;
                 showToast('操作失敗');
             }
@@ -705,7 +877,6 @@
         
         async function setDetectionInterval() {
             const interval = parseInt(document.getElementById('intervalInput').value);
-            
             if (interval < 5 || interval > 300) {
                 showToast('間隔必須在 5-300 秒之間');
                 return;
@@ -731,9 +902,7 @@
             { name: '手機', icon: '📱', order: 1 },
             { name: '鑰匙', icon: '🔑', order: 2 },
             { name: '眼鏡', icon: '👓', order: 3 },
-            { name: '錢包', icon: '👛', order: 4 },
-            { name: '耳機', icon: '🎧', order: 5 },
-            { name: '遙控器', icon: '📺', order: 6 }
+            { name: '錢包', icon: '👛', order: 4 }
         ];
         
         function getQuickItems() {
@@ -746,40 +915,21 @@
         }
         
         function loadQuickItems() {
-            const items = getQuickItems();
-            renderQuickItemsList(items);
+            renderQuickItemsList(getQuickItems());
         }
         
         function renderQuickItemsList(items) {
             const container = document.getElementById('quickItemsList');
-            
             if (items.length === 0) {
                 container.innerHTML = '<p style="color:#aaa;">尚未設定常用物品</p>';
                 return;
             }
             
             container.innerHTML = items.map(item => `
-                <div class="class-tag" style="
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 8px;
-                    background: rgba(255,215,0,0.2);
-                    padding: 8px 12px;
-                    border-radius: 20px;
-                    font-size: 14px;
-                ">
+                <div style="display:inline-flex; align-items:center; gap:8px; background:rgba(255,215,0,0.2); padding:8px 12px; border-radius:20px; font-size:14px;">
                     <span>${item.icon}</span>
-                    <span style="color:#fff;">${item.name}</span>
-                    <button onclick="removeQuickItem('${item.name}')" style="
-                        background: rgba(245,87,108,0.5);
-                        border: none;
-                        color: #fff;
-                        width: 20px;
-                        height: 20px;
-                        border-radius: 50%;
-                        cursor: pointer;
-                        font-size: 12px;
-                    ">✕</button>
+                    <span>${item.name}</span>
+                    <button onclick="removeQuickItem('${item.name}')" style="background:rgba(245,87,108,0.5); border:none; color:#fff; width:20px; height:20px; border-radius:50%; cursor:pointer; font-size:12px;">✕</button>
                 </div>
             `).join('');
         }
@@ -789,14 +939,9 @@
             const icon = document.getElementById('newQuickItemIcon').value.trim() || '📦';
             const order = parseInt(document.getElementById('newQuickItemOrder').value) || 1;
             
-            if (!name) {
-                alert('請輸入物品名稱');
-                return;
-            }
+            if (!name) { alert('請輸入物品名稱'); return; }
             
             const items = getQuickItems();
-            
-            // 檢查是否已存在
             if (items.find(i => i.name === name)) {
                 showToast('物品已存在');
                 return;
@@ -804,7 +949,6 @@
             
             items.push({ name, icon, order });
             items.sort((a, b) => a.order - b.order);
-            
             saveQuickItems(items);
             
             document.getElementById('newQuickItemName').value = '';
@@ -825,10 +969,22 @@
             loadQuickItems();
         }
         
+        // ========================================
+        // 工具函數
+        // ========================================
+        
+        function showToast(msg) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
         // 初始化
+        loadObjects();
         loadConfig();
         loadAvailableCameras();
-        loadClasses();
         loadSchedulerStatus();
         loadQuickItems();
     </script>

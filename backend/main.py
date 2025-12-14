@@ -1,20 +1,23 @@
 """
 找東西助手 - 後端 API 服務
 FastAPI 提供偵測服務和 API 端點
+使用 YOLO12 + DINOv2 個人化物件偵測
 """
 
 import os
 import json
 import asyncio
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import cv2
+import numpy as np
 
 from detector import ObjectDetector
 from scheduler import DetectionScheduler
@@ -27,8 +30,13 @@ from scheduler import DetectionScheduler
 class Detection(BaseModel):
     """單一偵測結果"""
     object_class: str
+    object_class_zh: Optional[str] = None
     confidence: float
     bbox: List[float]
+    matched_object_id: Optional[str] = None
+    matched_object_name: Optional[str] = None
+    matched_object_name_zh: Optional[str] = None
+    similarity: Optional[float] = None
     surface: Optional[str] = None
     region: Optional[str] = None
     timestamp: Optional[int] = None
@@ -40,7 +48,7 @@ class DetectionResponse(BaseModel):
     detections: List[Detection]
     timestamp: int
     message: Optional[str] = None
-    image_path: Optional[str] = None  # 截圖路徑
+    image_path: Optional[str] = None
 
 
 class HealthResponse(BaseModel):
@@ -49,6 +57,13 @@ class HealthResponse(BaseModel):
     version: str
     detector_ready: bool
     scheduler_running: bool
+    registered_objects: int
+
+
+class RegisterObjectRequest(BaseModel):
+    """註冊物品請求"""
+    name: str
+    name_zh: str
 
 
 # ========================================
@@ -70,7 +85,7 @@ async def lifespan(app: FastAPI):
     """應用程式生命週期管理"""
     global detector, scheduler
     
-    print("🚀 啟動找東西助手後端服務...")
+    print("🚀 啟動找東西助手後端服務 (YOLO12 + DINOv2)...")
     
     # 初始化偵測器
     try:
@@ -78,6 +93,8 @@ async def lifespan(app: FastAPI):
         print("✅ 物件偵測器已載入")
     except Exception as e:
         print(f"⚠️ 偵測器載入失敗: {e}")
+        import traceback
+        traceback.print_exc()
         detector = None
     
     # 初始化排程器
@@ -101,8 +118,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="FindForYou API",
-    description="物品定位服務後端 API",
-    version="1.0.0",
+    description="物品定位服務後端 API (YOLO12 + DINOv2)",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -123,22 +140,226 @@ app.add_middleware(
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
     """健康檢查端點"""
+    registered_count = 0
+    if detector and detector.object_registry:
+        registered_count = len(detector.object_registry.objects)
+    
     return HealthResponse(
         status="ok",
-        version="1.0.0",
+        version="2.0.0",
         detector_ready=detector is not None and detector.is_ready,
-        scheduler_running=scheduler is not None and scheduler.is_running
+        scheduler_running=scheduler is not None and scheduler.is_running,
+        registered_objects=registered_count
     )
+
+
+# ========================================
+# 物品註冊 API (新增)
+# ========================================
+
+@app.get("/api/objects")
+async def list_objects():
+    """列出已註冊物品"""
+    if detector is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    return {
+        "success": True,
+        "objects": detector.get_registered_objects()
+    }
+
+
+@app.get("/api/objects/{obj_id}")
+async def get_object(obj_id: str):
+    """取得單一物品詳情"""
+    if detector is None or detector.object_registry is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    obj = detector.object_registry.get(obj_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail=f"物品 {obj_id} 不存在")
+    
+    # 取得圖片列表 (相對路徑)
+    images = []
+    for img_path in obj.images:
+        if os.path.exists(img_path):
+            images.append(f"/object_images/{os.path.basename(img_path)}")
+    
+    return {
+        "success": True,
+        "object": {
+            "id": obj.id,
+            "name": obj.name,
+            "name_zh": obj.name_zh,
+            "images": images,
+            "embedding_count": len(obj.embeddings),
+            "created_at": obj.created_at,
+            "updated_at": obj.updated_at
+        }
+    }
+
+
+@app.post("/api/objects/register")
+async def register_object(
+    name: str = Form(...),
+    name_zh: str = Form(...),
+    image: UploadFile = File(...)
+):
+    """註冊新物品"""
+    if detector is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    # 檢查檔案類型
+    if not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="請上傳圖片檔案")
+    
+    try:
+        # 讀取圖片
+        contents = await image.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="無法解析圖片")
+        
+        # 註冊物品
+        result = detector.register_object(
+            name=name,
+            name_zh=name_zh,
+            image=img
+        )
+        
+        if result:
+            return {
+                "success": True,
+                "message": f"已註冊物品: {name_zh}",
+                "object": result
+            }
+        else:
+            raise HTTPException(status_code=500, detail="註冊失敗")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/objects/{obj_id}/images")
+async def add_object_image(
+    obj_id: str,
+    image: UploadFile = File(...)
+):
+    """為物品新增照片"""
+    if detector is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    if not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="請上傳圖片檔案")
+    
+    try:
+        contents = await image.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="無法解析圖片")
+        
+        result = detector.add_object_image(obj_id=obj_id, image=img)
+        
+        if result:
+            return {
+                "success": True,
+                "message": f"已為物品新增照片",
+                "object": result
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f"物品 {obj_id} 不存在")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/objects/{obj_id}")
+async def update_object(
+    obj_id: str,
+    name: Optional[str] = Form(None),
+    name_zh: Optional[str] = Form(None)
+):
+    """更新物品資訊"""
+    if detector is None or detector.object_registry is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    result = detector.object_registry.update(
+        obj_id=obj_id,
+        name=name,
+        name_zh=name_zh
+    )
+    
+    if result:
+        return {
+            "success": True,
+            "message": f"已更新物品: {result.name_zh}",
+            "object": {
+                "id": result.id,
+                "name": result.name,
+                "name_zh": result.name_zh
+            }
+        }
+    else:
+        raise HTTPException(status_code=404, detail=f"物品 {obj_id} 不存在")
+
+
+@app.delete("/api/objects/{obj_id}")
+async def delete_object(obj_id: str):
+    """刪除物品"""
+    if detector is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    success = detector.delete_object(obj_id)
+    
+    if success:
+        return {
+            "success": True,
+            "message": f"已刪除物品: {obj_id}"
+        }
+    else:
+        raise HTTPException(status_code=404, detail=f"物品 {obj_id} 不存在")
 
 
 # ========================================
 # 攝影機管理 API
 # ========================================
 
+CAMERA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "camera_config.json")
+
+
+def load_camera_config():
+    """載入攝影機配置"""
+    if os.path.exists(CAMERA_CONFIG_PATH):
+        with open(CAMERA_CONFIG_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {"cameras": {}, "default_camera": 0}
+
+
+def save_camera_config(config):
+    """儲存攝影機配置"""
+    with open(CAMERA_CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+
+
+class CameraConfigRequest(BaseModel):
+    """攝影機配置請求"""
+    camera_id: str
+    name: str
+    location: str
+    enabled: bool = True
+
+
 @app.get("/api/cameras")
 async def list_cameras():
     """列出可用的攝影機"""
-    import cv2
     cameras = []
     config = load_camera_config()
     
@@ -148,7 +369,6 @@ async def list_cameras():
         if cap.isOpened():
             ret, _ = cap.read()
             if ret:
-                # 使用用戶配置的名稱，沒有則用預設
                 cam_config = config.get("cameras", {}).get(str(i), {})
                 name = cam_config.get("name", f"攝影機 {i}")
                 location = cam_config.get("location", "")
@@ -170,7 +390,6 @@ async def list_cameras():
 @app.get("/api/cameras/{camera_id}/preview")
 async def camera_preview(camera_id: int):
     """取得攝影機預覽圖片"""
-    import cv2
     import base64
     
     cap = cv2.VideoCapture(camera_id)
@@ -206,8 +425,6 @@ async def set_camera(camera_id: int):
     if detector is None:
         raise HTTPException(status_code=503, detail="偵測器未就緒")
     
-    # 測試攝影機是否可用
-    import cv2
     cap = cv2.VideoCapture(camera_id)
     if not cap.isOpened():
         cap.release()
@@ -222,37 +439,10 @@ async def set_camera(camera_id: int):
     }
 
 
-# 攝影機配置檔路徑
-CAMERA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "camera_config.json")
-
-
-def load_camera_config():
-    """載入攝影機配置"""
-    if os.path.exists(CAMERA_CONFIG_PATH):
-        with open(CAMERA_CONFIG_PATH, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {"cameras": {}, "default_camera": 0}
-
-
-def save_camera_config(config):
-    """儲存攝影機配置"""
-    with open(CAMERA_CONFIG_PATH, 'w', encoding='utf-8') as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
-
-
-class CameraConfigRequest(BaseModel):
-    """攝影機配置請求"""
-    camera_id: str
-    name: str
-    location: str
-    enabled: bool = True
-
-
 @app.get("/api/cameras/config")
 async def get_camera_config():
     """取得攝影機配置"""
-    config = load_camera_config()
-    return config
+    return load_camera_config()
 
 
 @app.post("/api/cameras/config")
@@ -288,6 +478,10 @@ async def delete_camera_config(camera_id: str):
     return {"success": False, "message": f"找不到攝影機 {camera_id}"}
 
 
+# ========================================
+# 偵測 API
+# ========================================
+
 @app.post("/api/snapshot", response_model=DetectionResponse)
 async def trigger_snapshot():
     """手動觸發快照偵測"""
@@ -307,22 +501,28 @@ async def trigger_snapshot():
         if current_camera in camera_config.get("cameras", {}):
             camera_location = camera_config["cameras"][current_camera].get("location", "unknown")
         
-        # 轉換 dataclass 為 Pydantic 模型，並設定 surface 為攝影機位置
-        detections = [
-            Detection(
+        # 轉換為 Pydantic 模型
+        detections = []
+        for d in raw_detections:
+            det = Detection(
                 object_class=d.object_class,
+                object_class_zh=d.object_class_zh,
                 confidence=d.confidence,
                 bbox=d.bbox,
-                surface=camera_location,  # 使用攝影機配置的位置
+                matched_object_id=d.matched_object_id,
+                matched_object_name=d.matched_object_name,
+                matched_object_name_zh=d.matched_object_name_zh,
+                similarity=d.similarity,
+                surface=camera_location,
                 region=d.region,
                 timestamp=d.timestamp
-            ) for d in raw_detections
-        ]
+            )
+            detections.append(det)
         
         latest_detections = detections
         
         # 廣播給所有連線的 WebSocket
-        await broadcast_detection(detections)
+        await broadcast_detection(detections, image_path)
         
         return DetectionResponse(
             success=True,
@@ -345,15 +545,10 @@ async def detect_image(file: UploadFile = File(...)):
     if detector is None:
         raise HTTPException(status_code=503, detail="偵測器未就緒")
     
-    # 檢查檔案類型
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="請上傳圖片檔案")
     
     try:
-        import cv2
-        import numpy as np
-        
-        # 讀取上傳的圖片
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -361,11 +556,26 @@ async def detect_image(file: UploadFile = File(...)):
         if frame is None:
             raise HTTPException(status_code=400, detail="無法解析圖片")
         
-        # 執行偵測
-        detections = detector._detect_frame(frame)
+        raw_detections = detector._detect_frame(frame)
+        
+        detections = [
+            Detection(
+                object_class=d.object_class,
+                object_class_zh=d.object_class_zh,
+                confidence=d.confidence,
+                bbox=d.bbox,
+                matched_object_id=d.matched_object_id,
+                matched_object_name=d.matched_object_name,
+                matched_object_name_zh=d.matched_object_name_zh,
+                similarity=d.similarity,
+                surface=d.surface,
+                region=d.region,
+                timestamp=d.timestamp
+            ) for d in raw_detections
+        ]
+        
         latest_detections = detections
         
-        # 廣播給所有連線的 WebSocket
         await broadcast_detection(detections)
         
         return DetectionResponse(
@@ -374,6 +584,8 @@ async def detect_image(file: UploadFile = File(...)):
             timestamp=int(datetime.now().timestamp() * 1000),
             message=f"偵測完成，找到 {len(detections)} 個物品"
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -388,230 +600,9 @@ async def get_latest_detections():
     )
 
 
-@app.post("/api/detections", response_model=DetectionResponse)
-async def save_detection(detection: Detection):
-    """儲存單筆偵測資料"""
-    global latest_detections
-    
-    try:
-        # 設定時間戳記
-        if detection.timestamp is None:
-            detection.timestamp = int(datetime.now().timestamp() * 1000)
-        
-        # 更新最新偵測
-        latest_detections = [detection]
-        
-        # 廣播給所有連線的 WebSocket
-        await broadcast_detection([detection])
-        
-        return DetectionResponse(
-            success=True,
-            detections=[detection],
-            timestamp=detection.timestamp,
-            message="偵測資料已儲存"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/detections/batch", response_model=DetectionResponse)
-async def save_detections_batch(detections: List[Detection]):
-    """批次儲存偵測資料"""
-    global latest_detections
-    
-    try:
-        timestamp = int(datetime.now().timestamp() * 1000)
-        
-        # 為沒有時間戳記的資料設定時間
-        for d in detections:
-            if d.timestamp is None:
-                d.timestamp = timestamp
-        
-        # 更新最新偵測
-        latest_detections = detections
-        
-        # 廣播給所有連線的 WebSocket
-        await broadcast_detection(detections)
-        
-        return DetectionResponse(
-            success=True,
-            detections=detections,
-            timestamp=timestamp,
-            message=f"已儲存 {len(detections)} 筆偵測資料"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # ========================================
-# 類別管理 API
+# 排程器 API
 # ========================================
-
-class ClassesRequest(BaseModel):
-    """類別設定請求"""
-    classes: List[str]
-
-
-class AddClassRequest(BaseModel):
-    """新增類別請求"""
-    class_name: str
-    class_name_zh: Optional[str] = None
-
-
-@app.get("/api/classes")
-async def get_classes():
-    """取得目前偵測類別列表"""
-    if detector is None:
-        raise HTTPException(status_code=503, detail="偵測器未就緒")
-    
-    return detector.get_classes()
-
-
-@app.post("/api/classes")
-async def set_classes(request: ClassesRequest):
-    """設定要偵測的類別"""
-    if detector is None:
-        raise HTTPException(status_code=503, detail="偵測器未就緒")
-    
-    success = detector.set_classes(request.classes)
-    if success:
-        return {
-            "success": True, 
-            "message": f"已設定 {len(request.classes)} 個類別",
-            "classes": request.classes
-        }
-    else:
-        raise HTTPException(status_code=500, detail="設定類別失敗")
-
-
-@app.post("/api/classes/add")
-async def add_class(request: AddClassRequest):
-    """新增單一類別"""
-    if detector is None:
-        raise HTTPException(status_code=503, detail="偵測器未就緒")
-    
-    success = detector.add_class(request.class_name, request.class_name_zh)
-    if success:
-        return {
-            "success": True, 
-            "message": f"已新增類別: {request.class_name}",
-            "classes": detector.custom_classes
-        }
-    else:
-        return {
-            "success": False, 
-            "message": f"類別 {request.class_name} 已存在"
-        }
-
-
-@app.delete("/api/classes/{class_name}")
-async def remove_class(class_name: str):
-    """移除類別"""
-    if detector is None:
-        raise HTTPException(status_code=503, detail="偵測器未就緒")
-    
-    success = detector.remove_class(class_name)
-    if success:
-        return {
-            "success": True, 
-            "message": f"已移除類別: {class_name}",
-            "classes": detector.custom_classes
-        }
-    else:
-        return {
-            "success": False, 
-            "message": f"類別 {class_name} 不存在"
-        }
-
-
-class FullClassRequest(BaseModel):
-    """完整類別定義請求"""
-    id: str
-    name_zh: str
-    prompts: List[str]
-
-
-@app.post("/api/classes/add_full")
-async def add_class_full(request: FullClassRequest):
-    """新增完整類別定義（含多個 prompts）"""
-    if detector is None:
-        raise HTTPException(status_code=503, detail="偵測器未就緒")
-    
-    # 檢查是否已存在
-    if request.id in detector.custom_classes:
-        return {"success": False, "message": f"類別 {request.id} 已存在"}
-    
-    # 新增到 class_definitions
-    new_def = {
-        "id": request.id,
-        "prompts": request.prompts if request.prompts else [request.id],
-        "name_zh": request.name_zh or request.id
-    }
-    
-    detector.class_definitions.append(new_def)
-    detector._rebuild_indices()
-    detector._update_model_classes()
-    detector._save_config()
-    
-    return {
-        "success": True,
-        "message": f"已新增類別: {request.id} ({len(request.prompts)} 個提示詞)",
-        "class_definition": new_def
-    }
-
-
-@app.post("/api/classes/update")
-async def update_class(request: FullClassRequest):
-    """更新類別定義（中文名稱和 prompts）"""
-    if detector is None:
-        raise HTTPException(status_code=503, detail="偵測器未就緒")
-    
-    # 找到現有定義
-    found = False
-    for i, def_ in enumerate(detector.class_definitions):
-        if def_["id"] == request.id:
-            detector.class_definitions[i] = {
-                "id": request.id,
-                "prompts": request.prompts if request.prompts else [request.id],
-                "name_zh": request.name_zh or request.id
-            }
-            found = True
-            break
-    
-    if not found:
-        return {"success": False, "message": f"類別 {request.id} 不存在"}
-    
-    detector._rebuild_indices()
-    detector._update_model_classes()
-    detector._save_config()
-    
-    return {
-        "success": True,
-        "message": f"已更新類別: {request.id}",
-        "classes": detector.custom_classes
-    }
-
-
-@app.post("/api/classes/reload")
-async def reload_classes():
-    """重新載入模型類別設定"""
-    if detector is None:
-        raise HTTPException(status_code=503, detail="偵測器未就緒")
-    
-    try:
-        # 重新設定模型類別
-        if detector.model and hasattr(detector.model, 'set_classes'):
-            detector.model.set_classes(detector.custom_classes)
-            print(f"✅ 模型類別已重新載入: {detector.custom_classes}")
-        
-        return {
-            "success": True, 
-            "message": f"模型已重新載入 {len(detector.custom_classes)} 個類別",
-            "classes": detector.custom_classes
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/api/scheduler/start")
 async def start_scheduler():
@@ -679,10 +670,7 @@ async def websocket_endpoint(websocket: WebSocket):
     
     try:
         while True:
-            # 保持連線，等待訊息
             data = await websocket.receive_text()
-            
-            # 可處理客戶端訊息（如心跳）
             if data == "ping":
                 await websocket.send_text("pong")
                 
@@ -690,15 +678,15 @@ async def websocket_endpoint(websocket: WebSocket):
         connected_websockets.remove(websocket)
 
 
-async def broadcast_detection(detections_input):
+async def broadcast_detection(detections_input, image_path=None):
     """廣播偵測結果給所有連線的 WebSocket"""
     global latest_detections
     
-    # 處理 scheduler 傳入的 tuple (detections, image_path)
-    image_path = None
+    # 處理不同輸入格式
     if isinstance(detections_input, tuple):
         detections = detections_input[0] if detections_input[0] else []
-        image_path = detections_input[1] if len(detections_input) > 1 else None
+        if len(detections_input) > 1 and detections_input[1]:
+            image_path = detections_input[1]
     else:
         detections = detections_input if detections_input else []
     
@@ -710,33 +698,22 @@ async def broadcast_detection(detections_input):
         if current_camera in camera_config.get("cameras", {}):
             camera_location = camera_config["cameras"][current_camera].get("location", "unknown")
     
-    latest_detections = detections
-    
-    # 轉換為可序列化的格式，並加上位置資訊
+    # 轉換為可序列化格式
     def to_serializable(d):
         if hasattr(d, 'dict'):
-            data = d.dict()  # Pydantic model
+            data = d.dict()
         elif hasattr(d, 'to_dict'):
-            data = d.to_dict()  # dataclass with to_dict
+            data = d.to_dict()
         elif hasattr(d, '__dataclass_fields__'):
             from dataclasses import asdict
-            data = asdict(d)  # dataclass
+            data = asdict(d)
         else:
             data = d if isinstance(d, dict) else {}
         
-        # 如果 surface 為空或為 unknown，使用攝影機配置的位置
-        current_surface = data.get('surface', '')
-        if not current_surface or current_surface == 'unknown':
-            if camera_location and camera_location != 'unknown':
-                data['surface'] = camera_location
-            else:
-                data['surface'] = '未知位置'
+        # 設定位置
+        if not data.get('surface') or data.get('surface') == 'unknown':
+            data['surface'] = camera_location if camera_location != 'unknown' else '未知位置'
         
-        # 如果 region 為 unknown，清空
-        if data.get('region') == 'unknown':
-            data['region'] = ''
-        
-        # 加上圖片路徑
         if image_path:
             data['image_path'] = image_path
             
@@ -759,12 +736,11 @@ async def broadcast_detection(detections_input):
 # 靜態檔案服務
 # ========================================
 
-# 掛載前端靜態檔案
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
 css_path = os.path.join(frontend_path, "css")
 js_path = os.path.join(frontend_path, "js")
 
-# 分別掛載 CSS 和 JS 目錄
+# 分別掛載目錄
 if os.path.exists(css_path):
     app.mount("/css", StaticFiles(directory=css_path), name="css")
 if os.path.exists(js_path):
@@ -774,6 +750,12 @@ if os.path.exists(js_path):
 static_path = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(static_path, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_path), name="static")
+
+# 掛載物品圖片資料夾
+object_images_path = os.path.join(os.path.dirname(__file__), "object_images")
+os.makedirs(object_images_path, exist_ok=True)
+app.mount("/object_images", StaticFiles(directory=object_images_path), name="object_images")
+
 
 @app.get("/")
 async def serve_frontend():

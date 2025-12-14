@@ -1,83 +1,139 @@
 """
 物件偵測器模組
-使用 YOLO-World 開放詞彙偵測
+使用 YOLO12 + DINOv2 進行個人化物件偵測
 """
 
 import os
 import json
 import cv2
 import numpy as np
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
 # 嘗試導入 ultralytics
 try:
-    from ultralytics import YOLOWorld
+    from ultralytics import YOLO
     YOLO_AVAILABLE = True
 except ImportError:
-    try:
-        from ultralytics import YOLO as YOLOWorld
-        YOLO_AVAILABLE = True
-        print("⚠️ YOLOWorld 未找到，嘗試使用 YOLO")
-    except ImportError:
-        YOLO_AVAILABLE = False
-        print("⚠️ ultralytics 未安裝，使用模擬模式")
+    YOLO_AVAILABLE = False
+    print("⚠️ ultralytics 未安裝，使用模擬模式")
+
+# 導入特徵提取器和物品註冊資料庫
+from feature_extractor import FeatureExtractor
+from object_registry import ObjectRegistry
 
 
 # ========================================
 # 設定
 # ========================================
 
-# 配置檔路徑
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "custom_classes.json")
-
-# 預設類別（若配置檔不存在）
-DEFAULT_CLASSES = [
-    "glasses",
-    "cell phone", 
-    "wallet",
-    "keys",
-    "remote",
-    "medicine bottle",
-    "hearing aid",
-    "book",
-    "cup",
-    "bottle"
-]
-
-# 預設中文對照
-DEFAULT_CLASS_NAMES_ZH = {
-    "glasses": "眼鏡",
-    "cell phone": "手機",
-    "wallet": "錢包",
-    "keys": "鑰匙",
-    "remote": "遙控器",
-    "medicine bottle": "藥罐",
-    "hearing aid": "助聽器",
-    "book": "書",
+# COCO 80 類別的中文對照 (常見物品)
+COCO_CLASSES_ZH = {
+    "person": "人",
+    "bicycle": "腳踏車",
+    "car": "汽車",
+    "motorcycle": "機車",
+    "airplane": "飛機",
+    "bus": "公車",
+    "train": "火車",
+    "truck": "卡車",
+    "boat": "船",
+    "traffic light": "紅綠燈",
+    "fire hydrant": "消防栓",
+    "stop sign": "停止標誌",
+    "parking meter": "停車計費器",
+    "bench": "長椅",
+    "bird": "鳥",
+    "cat": "貓",
+    "dog": "狗",
+    "horse": "馬",
+    "sheep": "羊",
+    "cow": "牛",
+    "elephant": "大象",
+    "bear": "熊",
+    "zebra": "斑馬",
+    "giraffe": "長頸鹿",
+    "backpack": "背包",
+    "umbrella": "雨傘",
+    "handbag": "手提包",
+    "tie": "領帶",
+    "suitcase": "行李箱",
+    "frisbee": "飛盤",
+    "skis": "滑雪板",
+    "snowboard": "滑雪板",
+    "sports ball": "球",
+    "kite": "風箏",
+    "baseball bat": "棒球棒",
+    "baseball glove": "棒球手套",
+    "skateboard": "滑板",
+    "surfboard": "衝浪板",
+    "tennis racket": "網球拍",
+    "bottle": "瓶子",
+    "wine glass": "酒杯",
     "cup": "杯子",
-    "bottle": "水瓶",
+    "fork": "叉子",
+    "knife": "刀子",
+    "spoon": "湯匙",
+    "bowl": "碗",
+    "banana": "香蕉",
+    "apple": "蘋果",
+    "sandwich": "三明治",
+    "orange": "橘子",
+    "broccoli": "花椰菜",
+    "carrot": "胡蘿蔔",
+    "hot dog": "熱狗",
+    "pizza": "披薩",
+    "donut": "甜甜圈",
+    "cake": "蛋糕",
+    "chair": "椅子",
+    "couch": "沙發",
+    "potted plant": "盆栽",
+    "bed": "床",
+    "dining table": "餐桌",
+    "toilet": "馬桶",
+    "tv": "電視",
+    "laptop": "筆電",
+    "mouse": "滑鼠",
+    "remote": "遙控器",
+    "keyboard": "鍵盤",
+    "cell phone": "手機",
+    "microwave": "微波爐",
+    "oven": "烤箱",
+    "toaster": "烤麵包機",
+    "sink": "水槽",
+    "refrigerator": "冰箱",
+    "book": "書",
     "clock": "時鐘",
+    "vase": "花瓶",
     "scissors": "剪刀",
+    "teddy bear": "泰迪熊",
+    "hair drier": "吹風機",
+    "toothbrush": "牙刷",
 }
 
-# 表面區域定義
-DEFAULT_SURFACES = {
-    "sofa": {"bbox": [0, 200, 800, 500], "name_zh": "沙發"},
-    "table": {"bbox": [200, 100, 600, 300], "name_zh": "桌子"},
-    "desk": {"bbox": [600, 150, 800, 400], "name_zh": "書桌"},
-}
+# 常見居家物品類別 (優先偵測這些)
+HOME_OBJECT_CLASSES = [
+    "cell phone", "remote", "book", "cup", "bottle", 
+    "laptop", "mouse", "keyboard", "scissors", "clock",
+    "backpack", "handbag", "umbrella", "suitcase",
+    "teddy bear", "vase", "toothbrush", "hair drier"
+]
 
 
 @dataclass
 class Detection:
     """偵測結果資料類別"""
-    object_class: str
-    confidence: float
-    bbox: List[float]
-    surface: Optional[str] = None
-    region: Optional[str] = None
+    object_class: str           # COCO 類別名稱
+    object_class_zh: str        # 中文類別名稱
+    confidence: float           # YOLO 偵測信心度
+    bbox: List[float]           # 邊界框 [x1, y1, x2, y2]
+    matched_object_id: Optional[str] = None  # 匹配的用戶物品 ID
+    matched_object_name: Optional[str] = None  # 匹配的用戶物品名稱
+    matched_object_name_zh: Optional[str] = None  # 匹配的用戶物品中文名稱
+    similarity: Optional[float] = None  # 特徵相似度
+    surface: Optional[str] = None  # 所在表面/位置
+    region: Optional[str] = None   # 區域
     timestamp: Optional[int] = None
     
     def to_dict(self) -> dict:
@@ -85,245 +141,175 @@ class Detection:
 
 
 class ObjectDetector:
-    """YOLO-World 物件偵測器類別"""
+    """YOLO12 + DINOv2 物件偵測器類別"""
     
     def __init__(
         self, 
-        model_path: str = "yolov8x-worldv2.pt",  # 最大模型，最高精準度
+        model_path: str = "yolo12m.pt",  # YOLO12 Medium
         camera_source: int = 0,
-        config_path: str = CONFIG_PATH
+        similarity_threshold: float = 0.7
     ):
         self.model_path = model_path
         self.camera_source = camera_source
-        self.config_path = config_path
+        self.similarity_threshold = similarity_threshold
         self.model = None
+        self.feature_extractor = None
+        self.object_registry = None
         self.is_ready = False
-        self.surfaces = DEFAULT_SURFACES
         
-        # 類別管理
-        self.class_definitions: List[Dict] = [] # 儲存完整的類別定義
-        self.custom_classes: List[str] = [] # 僅儲存 ID 列表 (給前端用)
-        self.class_names_zh: Dict[str, str] = {} # ID -> 中文名稱
-        self.prompt_map: Dict[str, str] = {} # Prompt -> ID
-        self.active_prompts: List[str] = [] # 給 YOLO 的所有 Prompts
-        
-        # 載入配置
-        self._load_config()
+        # 初始化
         self._init_model()
-    
-    def _load_config(self):
-        """載入自訂類別配置"""
-        try:
-            if os.path.exists(self.config_path):
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    
-                # 檢查這是否是新格式 (classes 是 list of dicts)
-                raw_classes = config.get("classes", [])
-                if raw_classes and isinstance(raw_classes[0], dict):
-                    self.class_definitions = raw_classes
-                else:
-                    # 舊格式轉換為新格式
-                    old_classes = config.get("classes", DEFAULT_CLASSES)
-                    old_names_zh = config.get("class_names_zh", DEFAULT_CLASS_NAMES_ZH)
-                    self.class_definitions = []
-                    for cls_id in old_classes:
-                        self.class_definitions.append({
-                            "id": cls_id,
-                            "prompts": [cls_id],
-                            "name_zh": old_names_zh.get(cls_id, cls_id)
-                        })
-            else:
-                # 使用預設值
-                self.class_definitions = []
-                for cls_id in DEFAULT_CLASSES:
-                    self.class_definitions.append({
-                        "id": cls_id,
-                        "prompts": [cls_id],
-                        "name_zh": DEFAULT_CLASS_NAMES_ZH.get(cls_id, cls_id)
-                    })
-                self._save_config()
-
-            # 重建索引和對照表
-            self._rebuild_indices()
-            print(f"✅ 載入自訂類別: {len(self.custom_classes)} 個 (共 {len(self.active_prompts)} 個提示詞)")
-
-        except Exception as e:
-            print(f"⚠️ 載入配置失敗: {e}，使用預設值")
-            self.class_definitions = []
-            for cls_id in DEFAULT_CLASSES:
-                self.class_definitions.append({
-                    "id": cls_id,
-                    "prompts": [cls_id],
-                    "name_zh": DEFAULT_CLASS_NAMES_ZH.get(cls_id, cls_id)
-                })
-            self._rebuild_indices()
-
-    def _rebuild_indices(self):
-        """從 class_definitions 重建所有輔助索引"""
-        self.custom_classes = []
-        self.class_names_zh = {}
-        self.prompt_map = {}
-        self.active_prompts = []
-        
-        for item in self.class_definitions:
-            cls_id = item["id"]
-            prompts = item.get("prompts", [cls_id])
-            name_zh = item.get("name_zh", cls_id)
-            
-            self.custom_classes.append(cls_id)
-            self.class_names_zh[cls_id] = name_zh
-            
-            for p in prompts:
-                # 確保 prompt 是字串且不重複 (雖然 logic 上同一個 prompt 指向不同 ID 會有歧義，這裡以後加入的為準或視為無效)
-                if p not in self.prompt_map:
-                    self.prompt_map[p] = cls_id
-                    self.active_prompts.append(p)
-    
-    def _save_config(self):
-        """儲存自訂類別配置"""
-        config = {
-            "classes": self.class_definitions
-        }
-        try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=2)
-            print(f"✅ 配置已儲存")
-        except Exception as e:
-            print(f"⚠️ 儲存配置失敗: {e}")
+        self._init_feature_extractor()
+        self._init_registry()
     
     def _init_model(self):
-        """初始化 YOLO-World 模型"""
+        """初始化 YOLO12 模型"""
         if not YOLO_AVAILABLE:
             print("⚠️ YOLO 不可用，使用模擬模式")
             self.is_ready = True
             return
         
         try:
-            # 載入 YOLO-World 模型
-            self.model = YOLOWorld(self.model_path)
+            # 載入 YOLO12 模型
+            self.model = YOLO(self.model_path)
             
             # 設定使用 GPU
             import torch
             if torch.cuda.is_available():
                 self.model.to('cuda')
-                print(f"✅ 模型已載入到 GPU: {torch.cuda.get_device_name(0)}")
+                print(f"✅ YOLO12 模型已載入到 GPU: {torch.cuda.get_device_name(0)}")
             else:
-                print("⚠️ CUDA 不可用，使用 CPU")
+                print("⚠️ CUDA 不可用，YOLO12 使用 CPU")
             
-            # 設定自訂類別 (使用所有 prompts)
-            self._update_model_classes()
-            
-            self.is_ready = True
-            print(f"✅ YOLO-World 模型已載入: {self.model_path}")
+            print(f"✅ YOLO12 模型已載入: {self.model_path}")
             
         except Exception as e:
-            print(f"❌ 模型載入失敗: {e}")
-            self.is_ready = True  # 使用模擬模式
-
-    def _update_model_classes(self):
-        """更新模型的類別列表"""
-        if self.model and hasattr(self.model, 'set_classes'):
-            # YOLO-World 需要 list of strings
-            try:
-                self.model.set_classes(self.active_prompts)
-                print(f"✅ YOLO-World 類別已更新: {len(self.active_prompts)} 個提示詞")
-            except Exception as e:
-                print(f"❌ 設定模型類別失敗: {e}")
-
-    # ========================================
-    # 類別管理 API
-    # ========================================
+            print(f"❌ YOLO12 模型載入失敗: {e}")
+            self.model = None
     
-    def get_classes(self) -> Dict[str, Any]:
-        """取得目前偵測類別列表"""
-        return {
-            "classes": self.custom_classes,
-            "class_names_zh": self.class_names_zh,
-            "class_definitions": self.class_definitions  # 新增：完整定義
-        }
-    
-    def set_classes(self, classes: List[str]) -> bool:
-        """設定要偵測的類別 (舊版 API 相容)
-        注意：這裡傳入的是 ID 列表。如果 ID 存在於現有定義中，保留它；
-        如果不存在，則新增一個單一 prompt 的類別。
-        這會覆寫目前的 class_definitions。
-        """
+    def _init_feature_extractor(self):
+        """初始化 DINOv2 特徵提取器"""
         try:
-            new_definitions = []
-            
-            # 建立現有定義的 lookup
-            current_def_map = {d["id"]: d for d in self.class_definitions}
-            
-            for cls_id in classes:
-                if cls_id in current_def_map:
-                    new_definitions.append(current_def_map[cls_id])
-                else:
-                    # 新增預設
-                    new_definitions.append({
-                        "id": cls_id,
-                        "prompts": [cls_id],
-                        "name_zh": cls_id
-                    })
-            
-            self.class_definitions = new_definitions
-            self._rebuild_indices()
-            self._update_model_classes()
-            self._save_config()
-            
-            print(f"✅ 類別已更新 (Set): {classes}")
-            return True
+            self.feature_extractor = FeatureExtractor(model_name="dinov2_vits14")
+            print("✅ DINOv2 特徵提取器已初始化")
         except Exception as e:
-            print(f"❌ 設定類別失敗: {e}")
-            return False
+            print(f"❌ DINOv2 初始化失敗: {e}")
+            self.feature_extractor = None
     
-    def add_class(self, class_name: str, class_name_zh: Optional[str] = None) -> bool:
-        """新增單一類別"""
-        if class_name in self.custom_classes:
-            return False
-        
-        new_def = {
-            "id": class_name,
-            "prompts": [class_name],
-            "name_zh": class_name_zh if class_name_zh else class_name
-        }
-        
-        self.class_definitions.append(new_def)
-        self._rebuild_indices()
-        self._update_model_classes()
-        self._save_config()
-        
-        print(f"✅ 新增類別: {class_name}")
-        return True
+    def _init_registry(self):
+        """初始化物品註冊資料庫"""
+        try:
+            self.object_registry = ObjectRegistry()
+            self.is_ready = True
+            print("✅ 物品註冊資料庫已載入")
+        except Exception as e:
+            print(f"❌ 物品註冊資料庫初始化失敗: {e}")
+            self.object_registry = None
     
-    def remove_class(self, class_name: str) -> bool:
-        """移除類別"""
-        if class_name not in self.custom_classes:
-            return False
-        
-        self.class_definitions = [d for d in self.class_definitions if d["id"] != class_name]
-        self._rebuild_indices()
-        self._update_model_classes()
-        self._save_config()
-        
-        print(f"✅ 移除類別: {class_name}")
-        return True
+    # ========================================
+    # 物品註冊功能
+    # ========================================
     
-    def get_class_name_zh(self, class_name: str) -> str:
-        """取得類別的中文名稱"""
-        return self.class_names_zh.get(class_name, class_name)
+    def register_object(
+        self,
+        name: str,
+        name_zh: str,
+        image: np.ndarray
+    ) -> Optional[Dict]:
+        """
+        註冊新物品
+        
+        Args:
+            name: 物品英文名稱
+            name_zh: 物品中文名稱
+            image: 物品圖片 (已裁切的物品區域)
+            
+        Returns:
+            註冊結果或 None
+        """
+        if not self.feature_extractor or not self.object_registry:
+            return None
+        
+        try:
+            # 提取特徵
+            embedding = self.feature_extractor.extract_features(image)
+            
+            # 將圖片編碼為 bytes
+            _, buffer = cv2.imencode('.jpg', image)
+            image_bytes = buffer.tobytes()
+            
+            # 註冊到資料庫
+            obj = self.object_registry.register(
+                name=name,
+                name_zh=name_zh,
+                embedding=embedding,
+                image_data=image_bytes
+            )
+            
+            return {
+                "id": obj.id,
+                "name": obj.name,
+                "name_zh": obj.name_zh,
+                "embedding_count": len(obj.embeddings)
+            }
+        except Exception as e:
+            print(f"❌ 註冊物品失敗: {e}")
+            return None
+    
+    def add_object_image(
+        self,
+        obj_id: str,
+        image: np.ndarray
+    ) -> Optional[Dict]:
+        """為已註冊物品新增照片"""
+        if not self.feature_extractor or not self.object_registry:
+            return None
+        
+        try:
+            embedding = self.feature_extractor.extract_features(image)
+            _, buffer = cv2.imencode('.jpg', image)
+            image_bytes = buffer.tobytes()
+            
+            obj = self.object_registry.add_embedding(
+                obj_id=obj_id,
+                embedding=embedding,
+                image_data=image_bytes
+            )
+            
+            if obj:
+                return {
+                    "id": obj.id,
+                    "name": obj.name,
+                    "embedding_count": len(obj.embeddings)
+                }
+            return None
+        except Exception as e:
+            print(f"❌ 新增物品照片失敗: {e}")
+            return None
+    
+    def get_registered_objects(self) -> List[Dict]:
+        """取得所有已註冊物品"""
+        if not self.object_registry:
+            return []
+        return self.object_registry.to_api_response()
+    
+    def delete_object(self, obj_id: str) -> bool:
+        """刪除已註冊物品"""
+        if not self.object_registry:
+            return False
+        return self.object_registry.delete(obj_id)
     
     # ========================================
     # 偵測功能
     # ========================================
     
-    async def detect_snapshot(self, save_image: bool = True) -> tuple:
-        """從攝影機擷取快照並進行偵測
+    async def detect_snapshot(self, save_image: bool = True) -> Tuple[List[Detection], Optional[str]]:
+        """
+        從攝影機擷取快照並進行偵測
         
         Returns:
             tuple: (detections, image_path)
         """
-        
         if not YOLO_AVAILABLE or self.model is None:
             return self._get_mock_detections(), None
         
@@ -352,46 +338,16 @@ class ObjectDetector:
             
         except Exception as e:
             print(f"❌ 偵測失敗: {e}")
+            import traceback
+            traceback.print_exc()
             return self._get_mock_detections(), None
     
-    def _save_snapshot(self, frame: np.ndarray, detections: List[Detection]) -> str:
-        """儲存截圖並在圖片上畫出偵測框"""
-        # 確保 static 資料夾存在
-        static_dir = os.path.join(os.path.dirname(__file__), "static")
-        os.makedirs(static_dir, exist_ok=True)
-        
-        # 畫偵測框
-        frame_with_boxes = frame.copy()
-        for det in detections:
-            x1, y1, x2, y2 = [int(x) for x in det.bbox]
-            # 顯示 ID 和 中文名
-            name_zh = self.class_names_zh.get(det.object_class, det.object_class)
-            label = f"{name_zh} {det.confidence:.0%}"
-            
-            # 畫框
-            cv2.rectangle(frame_with_boxes, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            
-            # 畫標籤背景
-            # 支援中文顯示需要特殊處理 (OpenCV 不支援中文)，這裡先用英文 ID 如果無法顯示中文
-            # 為了簡單起見，這裡還是主要顯示 ID，或者需要用 PIL 畫中文
-            # 暫時顯示 ID + 分數
-            display_text = f"{det.object_class} {det.confidence:.0%}"
-            
-            (w, h), _ = cv2.getTextSize(display_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-            cv2.rectangle(frame_with_boxes, (x1, y1 - 25), (x1 + w + 10, y1), (0, 255, 0), -1)
-            cv2.putText(frame_with_boxes, display_text, (x1 + 5, y1 - 8), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-        
-        # 儲存圖片
-        filename = f"snapshot_{int(datetime.now().timestamp() * 1000)}.jpg"
-        filepath = os.path.join(static_dir, filename)
-        cv2.imwrite(filepath, frame_with_boxes)
-        
-        print(f"📸 截圖已儲存: {filename}")
-        return f"/static/{filename}"
-    
     def _detect_frame(self, frame: np.ndarray) -> List[Detection]:
-        """對單幀影像進行偵測"""
+        """對單幀影像進行偵測並匹配用戶物品"""
+        if self.model is None:
+            return []
+        
+        # YOLO12 偵測
         results = self.model(frame, verbose=False)
         detections = []
         
@@ -402,110 +358,163 @@ class ObjectDetector:
             boxes = r.boxes.xyxy.cpu().numpy()
             confs = r.boxes.conf.cpu().numpy()
             clss = r.boxes.cls.cpu().numpy()
-            
-            # 取得類別名稱
             names = r.names if hasattr(r, 'names') else {}
             
             for box, conf, cls in zip(boxes, confs, clss):
                 cls_id = int(cls)
-                
-                # 取得預測的 prompt
-                if isinstance(names, dict):
-                    predicted_prompt = names.get(cls_id, f"class_{cls_id}")
-                elif cls_id < len(self.active_prompts):
-                    predicted_prompt = self.active_prompts[cls_id]
-                else:
-                    predicted_prompt = f"class_{cls_id}"
-                
-                # 映射回 Canonical ID
-                # 如果找不到 (通常不應該發生，除非 YOLO 輸出怪怪的)，就直接用 prompt
-                canonical_id = self.prompt_map.get(predicted_prompt, predicted_prompt)
-                
-                # [Debug] 顯示觸發的 Prompt
-                if predicted_prompt != canonical_id:
-                     print(f"🔍 [Multi-Prompt] Detected '{predicted_prompt}' => Mapped to '{canonical_id}'")
+                class_name = names.get(cls_id, f"class_{cls_id}")
+                class_name_zh = COCO_CLASSES_ZH.get(class_name, class_name)
                 
                 bbox = [float(x) for x in box]
                 
-                # 判斷所在表面
-                cx = (bbox[0] + bbox[2]) / 2
-                cy = (bbox[1] + bbox[3]) / 2
-                surface, region = self._get_surface_region(cx, cy)
-                
-                detections.append(Detection(
-                    object_class=canonical_id, # 這裡是重點：存入統一的 ID
+                # 建立基礎偵測結果
+                detection = Detection(
+                    object_class=class_name,
+                    object_class_zh=class_name_zh,
                     confidence=float(conf),
                     bbox=bbox,
-                    surface=surface,
-                    region=region,
                     timestamp=int(datetime.now().timestamp() * 1000)
-                ))
+                )
+                
+                # 嘗試匹配用戶註冊的物品
+                if self.feature_extractor and self.object_registry:
+                    match_result = self._match_object(frame, bbox)
+                    if match_result:
+                        detection.matched_object_id = match_result["id"]
+                        detection.matched_object_name = match_result["name"]
+                        detection.matched_object_name_zh = match_result["name_zh"]
+                        detection.similarity = match_result["similarity"]
+                
+                detections.append(detection)
         
         return detections
     
-    def _get_surface_region(self, cx: float, cy: float) -> tuple:
-        """判斷物品所在的表面和區域"""
-        for surface_name, surface_info in self.surfaces.items():
-            bbox = surface_info["bbox"]
-            x1, y1, x2, y2 = bbox
-            
-            if x1 <= cx <= x2 and y1 <= cy <= y2:
-                # 計算區域 (左/中/右)
-                width = x2 - x1
-                rel_x = (cx - x1) / width
-                
-                if rel_x < 0.33:
-                    region = "left"
-                elif rel_x < 0.66:
-                    region = "center"
-                else:
-                    region = "right"
-                
-                return surface_name, region
+    def _match_object(
+        self, 
+        frame: np.ndarray, 
+        bbox: List[float]
+    ) -> Optional[Dict]:
+        """匹配偵測到的物件與用戶註冊的物品"""
+        if not self.object_registry.objects:
+            return None
         
-        # 返回空值，讓 main.py 使用攝影機配置的位置覆蓋
-        return "", ""
+        try:
+            # 裁切物件區域
+            x1, y1, x2, y2 = [int(x) for x in bbox]
+            
+            # 確保邊界在圖片範圍內
+            h, w = frame.shape[:2]
+            x1 = max(0, x1)
+            y1 = max(0, y1)
+            x2 = min(w, x2)
+            y2 = min(h, y2)
+            
+            cropped = frame[y1:y2, x1:x2]
+            
+            if cropped.size == 0:
+                return None
+            
+            # 提取特徵
+            embedding = self.feature_extractor.extract_features(cropped)
+            
+            # 匹配
+            match = self.object_registry.find_match(
+                embedding, 
+                threshold=self.similarity_threshold
+            )
+            
+            if match:
+                obj, similarity = match
+                return {
+                    "id": obj.id,
+                    "name": obj.name,
+                    "name_zh": obj.name_zh,
+                    "similarity": similarity
+                }
+            
+            return None
+            
+        except Exception as e:
+            print(f"⚠️ 物件匹配失敗: {e}")
+            return None
+    
+    def _save_snapshot(self, frame: np.ndarray, detections: List[Detection]) -> str:
+        """儲存截圖並在圖片上畫出偵測框"""
+        static_dir = os.path.join(os.path.dirname(__file__), "static")
+        os.makedirs(static_dir, exist_ok=True)
+        
+        frame_with_boxes = frame.copy()
+        
+        for det in detections:
+            x1, y1, x2, y2 = [int(x) for x in det.bbox]
+            
+            # 根據是否匹配到用戶物品選擇顏色
+            if det.matched_object_id:
+                color = (0, 255, 0)  # 綠色：匹配到用戶物品
+                label = f"{det.matched_object_name_zh or det.matched_object_name} {det.similarity:.0%}"
+            else:
+                color = (128, 128, 128)  # 灰色：未匹配
+                label = f"{det.object_class} {det.confidence:.0%}"
+            
+            # 畫框
+            cv2.rectangle(frame_with_boxes, (x1, y1), (x2, y2), color, 2)
+            
+            # 畫標籤背景
+            (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+            cv2.rectangle(frame_with_boxes, (x1, y1 - 25), (x1 + w + 10, y1), color, -1)
+            cv2.putText(frame_with_boxes, label, (x1 + 5, y1 - 8), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        
+        # 儲存圖片
+        filename = f"snapshot_{int(datetime.now().timestamp() * 1000)}.jpg"
+        filepath = os.path.join(static_dir, filename)
+        cv2.imwrite(filepath, frame_with_boxes)
+        
+        print(f"📸 截圖已儲存: {filename}")
+        return f"/static/{filename}"
     
     def _get_mock_detections(self) -> List[Detection]:
         """產生模擬偵測資料（用於測試）"""
         import random
         
-        # 使用自訂類別產生模擬資料
         mock_items = [
-            ("cell phone", "sofa", "left", 0.95),
-            ("remote", "table", "center", 0.88),
-            ("glasses", "desk", "right", 0.92),
-            ("keys", "table", "left", 0.85),
-            ("wallet", "sofa", "center", 0.90),
+            ("cell phone", "手機", 0.95),
+            ("remote", "遙控器", 0.88),
+            ("book", "書", 0.92),
+            ("cup", "杯子", 0.85),
+            ("bottle", "瓶子", 0.90),
         ]
         
-        # 過濾只保留目前自訂類別中的物品
-        available_items = [
-            item for item in mock_items 
-            if item[0] in self.custom_classes
-        ]
+        selected = random.sample(mock_items, k=min(random.randint(1, 3), len(mock_items)))
         
-        if not available_items:
-            available_items = mock_items[:3]
-        
-        # 隨機選擇 1-3 個物品
-        selected = random.sample(
-            available_items, 
-            k=min(random.randint(1, 3), len(available_items))
-        )
-        
-        return [
-            Detection(
+        detections = []
+        for item in selected:
+            det = Detection(
                 object_class=item[0],
-                confidence=item[3] + random.uniform(-0.05, 0.05),
+                object_class_zh=item[1],
+                confidence=item[2] + random.uniform(-0.05, 0.05),
                 bbox=[100.0, 100.0, 200.0, 200.0],
-                surface=item[1],
-                region=item[2],
                 timestamp=int(datetime.now().timestamp() * 1000)
             )
-            for item in selected
-        ]
+            
+            # 模擬匹配
+            if self.object_registry and random.random() > 0.5:
+                objects = self.object_registry.get_all()
+                if objects:
+                    obj = random.choice(objects)
+                    det.matched_object_id = obj.id
+                    det.matched_object_name = obj.name
+                    det.matched_object_name_zh = obj.name_zh
+                    det.similarity = random.uniform(0.7, 0.95)
+            
+            detections.append(det)
+        
+        return detections
     
-    def set_surfaces(self, surfaces: Dict[str, Any]):
-        """設定表面區域定義"""
-        self.surfaces = surfaces
+    # ========================================
+    # 相容性 API (供 main.py 使用)
+    # ========================================
+    
+    def get_class_name_zh(self, class_name: str) -> str:
+        """取得類別的中文名稱"""
+        return COCO_CLASSES_ZH.get(class_name, class_name)
