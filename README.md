@@ -36,15 +36,19 @@ FindForYou/
 │   ├── camera_config.json       # 攝影機配置
 │   └── requirements.txt         # Python 依賴
 │
-└── frontend/                     # Web 前端
-    ├── index.html               # 主頁面
-    ├── settings.html            # 設定頁面
-    ├── css/style.css            # 現代化樣式
-    └── js/
-        ├── app.js               # 主程式
-        ├── db.js                # IndexedDB 操作
-        ├── api.js               # API 通訊
-        └── ui.js                # UI 互動
+├── frontend/                     # Web 前端
+│   ├── index.html               # 主頁面
+│   ├── settings.html            # 設定頁面
+│   ├── css/style.css            # 現代化樣式
+│   └── js/
+│       ├── app.js               # 主程式
+│       ├── db.js                # IndexedDB 操作
+│       ├── api.js               # API 通訊
+│       └── ui.js                # UI 互動
+│
+└── train/                        # YOLOv12 訓練 🆕
+    ├── train_yolov12m.py        # YOLOv12m 高解析度訓練腳本
+    └── README.md                # 訓練說明文件
 ```
 
 ## 🚀 快速開始
@@ -102,7 +106,38 @@ DELETE /api/objects/{id}
 - **Backend**: Python 3.10+, FastAPI, Uvicorn
 - **Detection**: YOLO12m (Ultralytics)
 - **Feature Extraction**: DINOv2 ViT-S/14 (Meta)
+- **Training**: YOLOv12m with 1024px high-resolution training
 - **Storage**: IndexedDB (瀏覽器端), JSON (伺服器端)
+
+## 🎓 模型訓練 (新增)
+
+本專案支援自訂訓練 YOLOv12 模型以提升特定物品的偵測精度。
+
+### 訓練配置
+- **模型**: YOLOv12m (medium)
+- **解析度**: 1024x1024
+- **Batch Size**: 4
+- **資料集**: 8 個日常物品類別 (手機、錢包、鑰匙、遙控器、手錶、耳機、杯子、瓶子)
+
+### 訓練步驟
+
+```bash
+# 1. 準備資料集
+# 將資料集放置於 ../../datasets/findyou_yolo_clean/
+
+# 2. 激活 conda 環境
+conda activate d2_final
+
+# 3. 執行訓練
+cd train
+python train_yolov12m.py
+```
+
+### 訓練輸出
+- 訓練紀錄: `../../runs/train/findyou_yolov12m_1024/`
+- 最佳模型: `../../runs/train/findyou_yolov12m_1024/weights/best.pt`
+
+詳細訓練說明請參考 [train/README.md](train/README.md)
 
 ## 📄 License
 

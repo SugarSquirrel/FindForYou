@@ -40,6 +40,21 @@ env/
 *.pt
 *.onnx
 *.engine
+*.weights
+
+# Training outputs and runs
+runs/
+train/runs/
+
+# Datasets (too large for git)
+datasets/
+data/
+*.jpg
+*.jpeg
+*.png
+*.bmp
+!**/assets/*.jpg
+!**/assets/*.png
 
 # Snapshots (generated images)
 backend/static/snapshot_*.jpg
