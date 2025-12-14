@@ -8,6 +8,7 @@ class ObjectFinderApp {
         this.api = window.objectFinderAPI;
         this.ui = window.objectFinderUI;
         this.isInitialized = false;
+        this.isScanning = false;
     }
 
     async init() {
@@ -160,6 +161,8 @@ class ObjectFinderApp {
     }
 
     async handleManualScan() {
+        if (this.isScanning) return;
+        this.isScanning = true;
         this.ui.showLoading('正在掃描...');
         
         try {
@@ -173,18 +176,28 @@ class ObjectFinderApp {
                 
                 // 儲存偵測結果到本地
                 if (result && result.detections && result.detections.length > 0) {
+                    // 去重：同一物品類別只保留信心度最高的
+                    const deduped = {};
                     for (const det of result.detections) {
+                        const key = det.object_class;
+                        if (!deduped[key] || det.confidence > deduped[key].confidence) {
+                            deduped[key] = det;
+                        }
+                    }
+                    
+                    const dedupedList = Object.values(deduped);
+                    for (const det of dedupedList) {
                         await this.db.saveDetection({
                             objectClass: det.object_class,
                             confidence: det.confidence,
                             bbox: det.bbox,
-                            surface: det.surface || 'unknown',
-                            region: det.region || 'unknown',
+                            surface: det.surface || '未知',
+                            region: det.region || '',
                             timestamp: det.timestamp || Date.now(),
                             imagePath: result.image_path  // 儲存截圖路徑
                         });
                     }
-                    this.ui.showToast(`掃描完成！找到 ${result.detections.length} 個物品`, 'success');
+                    this.ui.showToast(`掃描完成！找到 ${dedupedList.length} 個物品`, 'success');
                 } else {
                     this.ui.showToast('掃描完成，但未偵測到物品', 'info');
                 }
@@ -198,6 +211,7 @@ class ObjectFinderApp {
             this.ui.showToast('掃描失敗', 'error');
         } finally {
             this.ui.hideLoading();
+            this.isScanning = false;
         }
     }
 
@@ -338,8 +352,127 @@ class ObjectFinderApp {
         }
     }
 
-    showHistory() {
-        this.ui.showToast('歷史記錄功能開發中...', 'info');
+    async showHistory() {
+        try {
+            const allDetections = await this.db.getAllDetections(200);
+            
+            if (allDetections.length === 0) {
+                this.ui.showToast('尚無歷史記錄', 'info');
+                return;
+            }
+            
+            // 按物品分類
+            const grouped = {};
+            for (const det of allDetections) {
+                const key = det.objectClass;
+                if (!grouped[key]) {
+                    grouped[key] = {
+                        objectClass: det.objectClass,
+                        objectClassZh: det.objectClassZh,
+                        records: []
+                    };
+                }
+                grouped[key].records.push(det);
+            }
+            
+            // 建立 Modal
+            this.showHistoryModal(Object.values(grouped));
+            
+        } catch (error) {
+            console.error('載入歷史記錄失敗:', error);
+            this.ui.showToast('載入歷史記錄失敗', 'error');
+        }
+    }
+
+    showHistoryModal(groupedData) {
+        // 移除舊的 Modal
+        const existing = document.getElementById('historyModal');
+        if (existing) existing.remove();
+        
+        const modal = document.createElement('div');
+        modal.id = 'historyModal';
+        modal.style.cssText = `
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.9); z-index: 9999;
+            display: flex; flex-direction: column;
+            padding: 20px; overflow: hidden;
+        `;
+        
+        // 格式化時間
+        const formatTime = (timestamp) => {
+            const date = new Date(timestamp);
+            return date.toLocaleString('zh-TW', { 
+                month: 'short', day: 'numeric', 
+                hour: '2-digit', minute: '2-digit' 
+            });
+        };
+        
+        // 處理區域顯示
+        const getRegionDisplay = (regionZh) => {
+            if (!regionZh || regionZh === 'unknown' || regionZh === 'undefined') return '';
+            return ' ' + regionZh;
+        };
+        
+        modal.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="color:#fff; margin:0;">📋 歷史記錄</h2>
+                <button id="closeHistoryBtn" style="
+                    background: rgba(255,255,255,0.1); border: none; color: #fff;
+                    width: 40px; height: 40px; border-radius: 50%; font-size: 20px; cursor: pointer;
+                ">✕</button>
+            </div>
+            <div style="flex:1; overflow-y:auto; padding-right:10px;">
+                ${groupedData.map(group => `
+                    <div style="margin-bottom:20px;">
+                        <h3 style="color:#ffd700; margin-bottom:10px; font-size:16px;">
+                            ${this.ui.getObjectIcon(group.objectClass)} ${group.objectClassZh}
+                            <span style="color:#888; font-size:12px; margin-left:8px;">(${group.records.length} 筆)</span>
+                        </h3>
+                        <div style="display:flex; flex-direction:column; gap:8px;">
+                            ${group.records.slice(0, 10).map(record => `
+                                <div style="
+                                    background: rgba(255,255,255,0.05); 
+                                    padding: 12px 16px; border-radius: 8px;
+                                    display: flex; justify-content: space-between; align-items: center;
+                                " data-image="${record.imagePath || ''}" class="history-item">
+                                    <div>
+                                        <div style="color:#fff;">${record.surfaceZh || '未知位置'}${getRegionDisplay(record.regionZh)}</div>
+                                        <div style="color:#888; font-size:12px;">${formatTime(record.timestamp)}</div>
+                                    </div>
+                                    <div style="color:#38ef7d; font-size:14px;">${Math.round(record.confidence * 100)}%</div>
+                                </div>
+                            `).join('')}
+                            ${group.records.length > 10 ? `
+                                <div style="color:#888; font-size:12px; text-align:center;">
+                                    還有 ${group.records.length - 10} 筆記錄...
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // 關閉按鈕
+        document.getElementById('closeHistoryBtn').addEventListener('click', () => modal.remove());
+        
+        // 點擊背景關閉
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+        });
+        
+        // 點擊歷史項目顯示截圖
+        modal.querySelectorAll('.history-item').forEach(item => {
+            item.style.cursor = 'pointer';
+            item.addEventListener('click', () => {
+                const imagePath = item.dataset.image;
+                if (imagePath) {
+                    this.ui.showSnapshot(imagePath);
+                }
+            });
+        });
     }
 
     showSettings() {
@@ -380,8 +513,17 @@ class ObjectFinderApp {
                     if (message.type === 'detection' && message.data && message.data.length > 0) {
                         console.log(`📡 收到定時偵測: ${message.data.length} 個物品`);
                         
-                        // 儲存到 IndexedDB
+                        // 去重：同一物品類別只保留信心度最高的
+                        const deduped = {};
                         for (const det of message.data) {
+                            const key = det.object_class;
+                            if (!deduped[key] || det.confidence > deduped[key].confidence) {
+                                deduped[key] = det;
+                            }
+                        }
+                        
+                        // 儲存到 IndexedDB
+                        for (const det of Object.values(deduped)) {
                             await this.db.saveDetection({
                                 objectClass: det.object_class,
                                 confidence: det.confidence,

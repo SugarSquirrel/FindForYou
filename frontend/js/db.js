@@ -147,6 +147,17 @@ class ObjectFinderDB {
     async saveDetection(detection) {
         if (!this.isReady) await this.init();
 
+        // 記憶體層去重鎖：防止 API 和 WebSocket 同時寫入
+        if (!this.savingLocks) this.savingLocks = new Set();
+        const lockKey = `${detection.timestamp}-${detection.objectClass}`;
+        if (this.savingLocks.has(lockKey)) {
+            // console.log(`🔒 忽略並發儲存: ${lockKey}`);
+            return Promise.resolve(detection);
+        }
+        this.savingLocks.add(lockKey);
+        // 5秒後釋放鎖（足夠覆蓋並發時間差）
+        setTimeout(() => this.savingLocks.delete(lockKey), 5000);
+
         const record = {
             timestamp: detection.timestamp || Date.now(),
             objectClass: detection.objectClass,
@@ -163,31 +174,44 @@ class ObjectFinderDB {
 
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([STORES.DETECTIONS, STORES.OBJECTS], 'readwrite');
-            
-            // 儲存到 detections
             const detectionsStore = transaction.objectStore(STORES.DETECTIONS);
-            const addRequest = detectionsStore.add(record);
+            
+            // 1. 先透過 timestamp 查詢是否已有相同記錄（去重關鍵）
+            const index = detectionsStore.index('timestamp');
+            const checkRequest = index.getAll(record.timestamp);
+            
+            checkRequest.onsuccess = () => {
+                const existing = checkRequest.result;
+                const isDuplicate = existing && existing.some(d => d.objectClass === record.objectClass);
+                
+                if (isDuplicate) {
+                    console.log(`♻️ 忽略重複記錄: ${record.objectClass} (${record.timestamp})`);
+                    return; // 直接返回，不執行 add，交易會自動結束
+                }
+                
+                // 2. 無重複則新增
+                const addRequest = detectionsStore.add(record);
 
-            addRequest.onsuccess = () => {
-                // 同時更新 objects 的最後位置
-                const objectsStore = transaction.objectStore(STORES.OBJECTS);
-                const objectRecord = {
-                    objectClass: record.objectClass,
-                    objectClassZh: record.objectClassZh,
-                    lastSeen: record.timestamp,
-                    surface: record.surface,
-                    surfaceZh: record.surfaceZh,
-                    region: record.region,
-                    regionZh: record.regionZh,
-                    confidence: record.confidence,
-                    description: `${record.objectClassZh}在${record.surfaceZh}${record.regionZh}`,
-                    imagePath: record.imagePath  // 儲存截圖路徑
+                addRequest.onsuccess = () => {
+                    // 3. 更新 objects store 的最後位置
+                    const objectsStore = transaction.objectStore(STORES.OBJECTS);
+                    const objectRecord = {
+                        objectClass: record.objectClass,
+                        objectClassZh: record.objectClassZh,
+                        lastSeen: record.timestamp,
+                        surface: record.surface,
+                        surfaceZh: record.surfaceZh,
+                        region: record.region,
+                        regionZh: record.regionZh,
+                        confidence: record.confidence,
+                        description: `${record.objectClassZh}在${record.surfaceZh}${record.regionZh}`,
+                        imagePath: record.imagePath
+                    };
+                    objectsStore.put(objectRecord);
                 };
-                objectsStore.put(objectRecord);
             };
 
             transaction.oncomplete = () => {
-                console.log('偵測記錄已儲存');
                 resolve(record);
             };
 
@@ -326,6 +350,68 @@ class ObjectFinderDB {
             };
 
             transaction.onerror = () => reject(transaction.error);
+        });
+    }
+
+    /**
+     * 取得所有偵測記錄（依時間倒序）
+     * @param {number} limit 最多回傳筆數
+     */
+    async getAllDetections(limit = 100) {
+        if (!this.isReady) await this.init();
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(STORES.DETECTIONS, 'readonly');
+            const store = transaction.objectStore(STORES.DETECTIONS);
+            const index = store.index('timestamp');
+            const request = index.openCursor(null, 'prev');
+            
+            const results = [];
+
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor && results.length < limit) {
+                    results.push(cursor.value);
+                    cursor.continue();
+                } else {
+                    resolve(results);
+                }
+            };
+
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /**
+     * 取得特定物品的歷史記錄
+     * @param {string} objectClass 物品類別（英文）
+     * @param {number} limit 最多回傳筆數
+     */
+    async getObjectHistory(objectClass, limit = 50) {
+        if (!this.isReady) await this.init();
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(STORES.DETECTIONS, 'readonly');
+            const store = transaction.objectStore(STORES.DETECTIONS);
+            const index = store.index('timestamp');
+            const request = index.openCursor(null, 'prev');
+            
+            const results = [];
+            const normalizedClass = objectClass.toLowerCase();
+
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    if (cursor.value.objectClass.toLowerCase() === normalizedClass && results.length < limit) {
+                        results.push(cursor.value);
+                    }
+                    cursor.continue();
+                } else {
+                    resolve(results);
+                }
+            };
+
+            request.onerror = () => reject(request.error);
         });
     }
 }
