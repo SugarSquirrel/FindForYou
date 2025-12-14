@@ -85,28 +85,32 @@ class ObjectFinderDB {
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
+                
+                // 版本升級時刪除舊的 store 並重新建立
+                if (db.objectStoreNames.contains(STORES.DETECTIONS)) {
+                    db.deleteObjectStore(STORES.DETECTIONS);
+                }
+                if (db.objectStoreNames.contains(STORES.OBJECTS)) {
+                    db.deleteObjectStore(STORES.OBJECTS);
+                }
 
                 // 建立 detections store
-                if (!db.objectStoreNames.contains(STORES.DETECTIONS)) {
-                    const detectionsStore = db.createObjectStore(STORES.DETECTIONS, { 
-                        keyPath: 'id',
-                        autoIncrement: true 
-                    });
-                    detectionsStore.createIndex('timestamp', 'timestamp', { unique: false });
-                    detectionsStore.createIndex('objectClass', 'objectClass', { unique: false });
-                    detectionsStore.createIndex('objectClassZh', 'objectClassZh', { unique: false });
-                }
+                const detectionsStore = db.createObjectStore(STORES.DETECTIONS, { 
+                    keyPath: 'id',
+                    autoIncrement: true 
+                });
+                detectionsStore.createIndex('timestamp', 'timestamp', { unique: false });
+                detectionsStore.createIndex('objectClass', 'objectClass', { unique: false });
+                detectionsStore.createIndex('objectClassZh', 'objectClassZh', { unique: false });
 
                 // 建立 objects store (物品最後位置)
-                if (!db.objectStoreNames.contains(STORES.OBJECTS)) {
-                    const objectsStore = db.createObjectStore(STORES.OBJECTS, { 
-                        keyPath: 'objectClass' 
-                    });
-                    objectsStore.createIndex('lastSeen', 'lastSeen', { unique: false });
-                    objectsStore.createIndex('objectClassZh', 'objectClassZh', { unique: false });
-                }
+                const objectsStore = db.createObjectStore(STORES.OBJECTS, { 
+                    keyPath: 'objectClass' 
+                });
+                objectsStore.createIndex('lastSeen', 'lastSeen', { unique: false });
+                objectsStore.createIndex('objectClassZh', 'objectClassZh', { unique: false });
 
-                console.log('IndexedDB 結構建立完成');
+                console.log('IndexedDB 結構已建立');
             };
         });
     }
@@ -161,7 +165,8 @@ class ObjectFinderDB {
         const record = {
             timestamp: detection.timestamp || Date.now(),
             objectClass: detection.objectClass,
-            objectClassZh: OBJECT_CLASS_MAP[detection.objectClass] || detection.objectClass,
+            // 優先使用傳入的中文名稱（匹配物品時會有自定義名稱）
+            objectClassZh: detection.objectClassZh || OBJECT_CLASS_MAP[detection.objectClass] || detection.objectClass,
             confidence: detection.confidence,
             bbox: detection.bbox,
             surface: detection.surface,
@@ -169,7 +174,9 @@ class ObjectFinderDB {
             surfaceZh: SURFACE_MAP[detection.surface] || detection.surface || '未知位置',
             region: detection.region || '',
             regionZh: REGION_MAP[detection.region] || detection.region || '',
-            imagePath: detection.imagePath || null  // 儲存截圖路徑
+            imagePath: detection.imagePath || null,  // 儲存截圖路徑（支援 base64）
+            matchedObjectId: detection.matchedObjectId || null,
+            matchedObjectName: detection.matchedObjectName || null
         };
 
         return new Promise((resolve, reject) => {

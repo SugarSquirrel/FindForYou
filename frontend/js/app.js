@@ -1,5 +1,6 @@
 /**
  * 找東西助手 - 主程式
+ * 前端攝影機架構：使用 getUserMedia 擷取畫面，傳送至後端推論
  */
 
 class ObjectFinderApp {
@@ -8,7 +9,17 @@ class ObjectFinderApp {
         this.api = window.objectFinderAPI;
         this.ui = window.objectFinderUI;
         this.isInitialized = false;
-        this.isScanning = false;
+        this.isDetecting = false;
+        
+        // 攝影機相關
+        this.videoStream = null;
+        this.videoElement = null;
+        this.canvasElement = null;
+        this.canvasContext = null;
+        
+        // 自動偵測
+        this.autoDetectInterval = null;
+        this.autoDetectSeconds = 5;
     }
 
     async init() {
@@ -25,11 +36,11 @@ class ObjectFinderApp {
             // 檢查後端連線
             await this.checkConnection();
             
-            // 連接 WebSocket 接收即時偵測結果
+            // 連接 WebSocket
             this.connectWebSocket();
             
-            // 載入攝影機清單
-            await this.loadCameras();
+            // 列舉可用攝影機
+            await this.enumerateCameras();
             
             // 載入最近記錄
             await this.loadRecentDetections();
@@ -37,11 +48,13 @@ class ObjectFinderApp {
             // 載入自訂常用物品
             this.loadQuickItems();
             
-            // 添加測試資料（開發用）
-            // await this.addDemoData();
+            // 初始化 canvas
+            this.videoElement = document.getElementById('cameraVideo');
+            this.canvasElement = document.getElementById('previewCanvas');
+            this.canvasContext = this.canvasElement.getContext('2d');
             
             this.isInitialized = true;
-            console.log('App 初始化完成');
+            console.log('✅ App 初始化完成');
             
         } catch (error) {
             console.error('初始化失敗:', error);
@@ -70,8 +83,42 @@ class ObjectFinderApp {
             });
         });
         
-        // 手動掃描
-        this.ui.elements.manualScanBtn.addEventListener('click', () => this.handleManualScan());
+        // 攝影機控制
+        const startCameraBtn = document.getElementById('startCameraBtn');
+        const detectBtn = document.getElementById('detectBtn');
+        const autoDetectToggle = document.getElementById('autoDetectToggle');
+        const intervalInput = document.getElementById('intervalInput');
+        
+        if (startCameraBtn) {
+            startCameraBtn.addEventListener('click', () => this.toggleCamera());
+        }
+        
+        if (detectBtn) {
+            detectBtn.addEventListener('click', () => this.detectCurrentFrame());
+        }
+        
+        if (autoDetectToggle) {
+            autoDetectToggle.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    this.startAutoDetection();
+                } else {
+                    this.stopAutoDetection();
+                }
+            });
+        }
+        
+        if (intervalInput) {
+            intervalInput.addEventListener('change', (e) => {
+                this.autoDetectSeconds = Math.max(1, Math.min(60, parseInt(e.target.value) || 5));
+                e.target.value = this.autoDetectSeconds;
+                
+                // 如果自動偵測中，重新啟動
+                if (this.autoDetectInterval) {
+                    this.stopAutoDetection();
+                    this.startAutoDetection();
+                }
+            });
+        }
         
         // 歷史記錄
         this.ui.elements.historyBtn.addEventListener('click', () => this.showHistory());
@@ -85,12 +132,6 @@ class ObjectFinderApp {
         // 設定
         this.ui.elements.settingsBtn.addEventListener('click', () => this.showSettings());
         
-        // 攝影機選擇
-        const cameraSelect = document.getElementById('cameraSelect');
-        if (cameraSelect) {
-            cameraSelect.addEventListener('change', (e) => this.handleCameraChange(e.target.value));
-        }
-        
         // 最近偵測項目點擊
         this.ui.elements.recentList.addEventListener('click', (e) => {
             const item = e.target.closest('.recent-item');
@@ -99,6 +140,252 @@ class ObjectFinderApp {
             }
         });
     }
+
+    // ========================================
+    // 攝影機控制
+    // ========================================
+
+    async enumerateCameras() {
+        try {
+            // 先請求權限
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            tempStream.getTracks().forEach(track => track.stop());
+            
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const cameras = devices.filter(d => d.kind === 'videoinput');
+            
+            const select = document.getElementById('cameraSelect');
+            if (select) {
+                select.innerHTML = cameras.map((cam, idx) => 
+                    `<option value="${cam.deviceId}">${cam.label || `攝影機 ${idx}`}</option>`
+                ).join('');
+            }
+            
+            console.log(`📹 發現 ${cameras.length} 個攝影機`);
+            
+        } catch (error) {
+            console.warn('無法列舉攝影機:', error);
+        }
+    }
+
+    async toggleCamera() {
+        const btn = document.getElementById('startCameraBtn');
+        const offMessage = document.getElementById('cameraOffMessage');
+        
+        if (this.videoStream) {
+            // 關閉攝影機
+            this.stopCamera();
+            btn.innerHTML = '<span class="btn-icon">📹</span><span class="btn-text">開啟攝影機</span>';
+            offMessage.style.display = 'flex';
+            this.videoElement.style.display = 'none';
+            this.canvasElement.style.display = 'none';
+        } else {
+            // 開啟攝影機
+            await this.startCamera();
+            btn.innerHTML = '<span class="btn-icon">⏹️</span><span class="btn-text">關閉攝影機</span>';
+            offMessage.style.display = 'none';
+            this.videoElement.style.display = 'block';
+        }
+    }
+
+    async startCamera() {
+        try {
+            const select = document.getElementById('cameraSelect');
+            const deviceId = select?.value;
+            
+            const constraints = {
+                video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment' },
+                audio: false
+            };
+            
+            this.videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+            this.videoElement.srcObject = this.videoStream;
+            
+            // 等待 video 載入
+            await new Promise((resolve) => {
+                this.videoElement.onloadedmetadata = resolve;
+            });
+            
+            // 設定 canvas 尺寸
+            this.canvasElement.width = this.videoElement.videoWidth;
+            this.canvasElement.height = this.videoElement.videoHeight;
+            
+            this.ui.showToast('攝影機已開啟', 'success');
+            console.log('✅ 攝影機已開啟');
+            
+        } catch (error) {
+            console.error('開啟攝影機失敗:', error);
+            this.ui.showToast('無法開啟攝影機，請確認權限設定', 'error');
+        }
+    }
+
+    stopCamera() {
+        if (this.videoStream) {
+            this.videoStream.getTracks().forEach(track => track.stop());
+            this.videoStream = null;
+            this.videoElement.srcObject = null;
+        }
+        
+        // 停止自動偵測
+        this.stopAutoDetection();
+        document.getElementById('autoDetectToggle').checked = false;
+        
+        this.ui.showToast('攝影機已關閉', 'info');
+    }
+
+    captureFrame() {
+        if (!this.videoStream || !this.videoElement.videoWidth) {
+            return null;
+        }
+        
+        // 將 video 畫到 canvas
+        this.canvasContext.drawImage(
+            this.videoElement,
+            0, 0,
+            this.canvasElement.width,
+            this.canvasElement.height
+        );
+        
+        // 轉成 Blob
+        return new Promise((resolve) => {
+            this.canvasElement.toBlob(resolve, 'image/jpeg', 0.9);
+        });
+    }
+
+    // ========================================
+    // 偵測功能
+    // ========================================
+
+    async detectCurrentFrame() {
+        if (this.isDetecting) return;
+        
+        if (!this.videoStream) {
+            this.ui.showToast('請先開啟攝影機', 'warning');
+            return;
+        }
+        
+        this.isDetecting = true;
+        this.ui.showLoading('偵測中...');
+        
+        try {
+            // 擷取畫面
+            const blob = await this.captureFrame();
+            if (!blob) {
+                this.ui.showToast('無法擷取畫面', 'error');
+                return;
+            }
+            
+            // 傳送到後端偵測
+            const result = await this.api.detectImage(blob);
+            
+            if (result && result.success) {
+                // 顯示標註後的圖片
+                if (result.image_base64) {
+                    this.showAnnotatedImage(result.image_base64);
+                }
+                
+                // 儲存偵測結果
+                if (result.detections && result.detections.length > 0) {
+                    // 去重
+                    const deduped = this.deduplicateDetections(result.detections);
+                    
+                    // 確認有圖片資料
+                    console.log('📷 image_base64 長度:', result.image_base64?.length || 0);
+                    
+                    for (const det of deduped) {
+                        await this.db.saveDetection({
+                            objectClass: det.object_class,
+                            objectClassZh: det.object_class_zh || det.matched_object_name_zh,
+                            confidence: det.similarity || det.confidence,
+                            bbox: det.bbox,
+                            surface: det.surface || '攝影機',
+                            region: det.region || '',
+                            timestamp: det.timestamp || Date.now(),
+                            matchedObjectId: det.matched_object_id,
+                            matchedObjectName: det.matched_object_name_zh,
+                            imagePath: result.image_base64  // 儲存完整 base64 圖片
+                        });
+                    }
+                    
+                    this.ui.showToast(`偵測到 ${deduped.length} 個物品`, 'success');
+                } else {
+                    this.ui.showToast('未偵測到物品', 'info');
+                }
+                
+                await this.loadRecentDetections();
+            } else {
+                this.ui.showToast('偵測失敗', 'error');
+            }
+            
+        } catch (error) {
+            console.error('偵測失敗:', error);
+            this.ui.showToast('偵測失敗', 'error');
+        } finally {
+            this.ui.hideLoading();
+            this.isDetecting = false;
+        }
+    }
+
+    showAnnotatedImage(base64) {
+        // 暫時顯示標註後的圖片在 canvas 上
+        const img = new Image();
+        img.onload = () => {
+            this.canvasElement.style.display = 'block';
+            this.canvasContext.drawImage(img, 0, 0, this.canvasElement.width, this.canvasElement.height);
+            
+            // 3 秒後恢復顯示 video
+            setTimeout(() => {
+                this.canvasElement.style.display = 'none';
+            }, 3000);
+        };
+        img.src = base64;
+    }
+
+    deduplicateDetections(detections) {
+        const deduped = {};
+        for (const det of detections) {
+            const key = det.matched_object_id || det.object_class;
+            if (!deduped[key] || (det.similarity || det.confidence) > (deduped[key].similarity || deduped[key].confidence)) {
+                deduped[key] = det;
+            }
+        }
+        return Object.values(deduped);
+    }
+
+    // ========================================
+    // 自動偵測
+    // ========================================
+
+    startAutoDetection() {
+        if (!this.videoStream) {
+            this.ui.showToast('請先開啟攝影機', 'warning');
+            document.getElementById('autoDetectToggle').checked = false;
+            return;
+        }
+        
+        this.stopAutoDetection();
+        
+        this.autoDetectInterval = setInterval(() => {
+            if (!this.isDetecting && this.videoStream) {
+                this.detectCurrentFrame();
+            }
+        }, this.autoDetectSeconds * 1000);
+        
+        this.ui.showToast(`自動偵測已啟動 (${this.autoDetectSeconds}秒)`, 'success');
+        console.log(`⏱️ 自動偵測已啟動，間隔 ${this.autoDetectSeconds} 秒`);
+    }
+
+    stopAutoDetection() {
+        if (this.autoDetectInterval) {
+            clearInterval(this.autoDetectInterval);
+            this.autoDetectInterval = null;
+            console.log('⏹️ 自動偵測已停止');
+        }
+    }
+
+    // ========================================
+    // 搜尋功能
+    // ========================================
 
     async handleSearch() {
         const query = this.ui.getSearchValue();
@@ -160,99 +447,13 @@ class ObjectFinderApp {
         recognition.start();
     }
 
-    async handleManualScan() {
-        if (this.isScanning) return;
-        this.isScanning = true;
-        this.ui.showLoading('正在掃描...');
-        
-        try {
-            if (this.api.isConnected) {
-                const result = await this.api.triggerSnapshot();
-                
-                // 顯示截圖
-                if (result && result.image_path) {
-                    this.ui.showSnapshot(result.image_path);
-                }
-                
-                // 儲存偵測結果到本地
-                if (result && result.detections && result.detections.length > 0) {
-                    // 去重：同一物品類別只保留信心度最高的
-                    const deduped = {};
-                    for (const det of result.detections) {
-                        const key = det.object_class;
-                        if (!deduped[key] || det.confidence > deduped[key].confidence) {
-                            deduped[key] = det;
-                        }
-                    }
-                    
-                    const dedupedList = Object.values(deduped);
-                    for (const det of dedupedList) {
-                        await this.db.saveDetection({
-                            objectClass: det.object_class,
-                            confidence: det.confidence,
-                            bbox: det.bbox,
-                            surface: det.surface || '未知',
-                            region: det.region || '',
-                            timestamp: det.timestamp || Date.now(),
-                            imagePath: result.image_path  // 儲存截圖路徑
-                        });
-                    }
-                    this.ui.showToast(`掃描完成！找到 ${dedupedList.length} 個物品`, 'success');
-                } else {
-                    this.ui.showToast('掃描完成，但未偵測到物品', 'info');
-                }
-                
-                await this.loadRecentDetections();
-            } else {
-                this.ui.showToast('後端服務未連線，無法掃描', 'warning');
-            }
-        } catch (error) {
-            console.error('掃描失敗:', error);
-            this.ui.showToast('掃描失敗', 'error');
-        } finally {
-            this.ui.hideLoading();
-            this.isScanning = false;
-        }
-    }
+    // ========================================
+    // 其他功能
+    // ========================================
 
     async checkConnection() {
         const health = await this.api.checkHealth();
-        this.ui.updateStatus(!!health, health ? '已連線至偵測服務' : '離線模式（使用本地資料）');
-    }
-
-    async loadCameras() {
-        try {
-            const result = await this.api.getCameras();
-            if (result && result.cameras) {
-                const select = document.getElementById('cameraSelect');
-                if (select) {
-                    select.innerHTML = result.cameras.map(cam => 
-                        `<option value="${cam.id}" ${cam.id === result.current ? 'selected' : ''}>${cam.display || cam.name}</option>`
-                    ).join('');
-                    
-                    if (result.cameras.length > 1) {
-                        this.ui.showToast(`發現 ${result.cameras.length} 個攝影機`, 'info');
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('載入攝影機失敗:', error);
-        }
-    }
-
-    async handleCameraChange(cameraId) {
-        try {
-            this.ui.showLoading('切換攝影機...');
-            const result = await this.api.setCamera(parseInt(cameraId));
-            if (result && result.success) {
-                this.ui.showToast(`已切換到攝影機 ${cameraId}`, 'success');
-            }
-        } catch (error) {
-            console.error('切換攝影機失敗:', error);
-            this.ui.showToast('切換攝影機失敗', 'error');
-        } finally {
-            this.ui.hideLoading();
-        }
+        this.ui.updateStatus(!!health, health ? '已連線至偵測服務' : '離線模式');
     }
 
     async loadRecentDetections() {
@@ -264,53 +465,12 @@ class ObjectFinderApp {
         }
     }
 
-    async addDemoData() {
-        const objects = await this.db.getAllObjects();
-        if (objects.length === 0) {
-            const demoData = [
-                { objectClass: 'cell phone', confidence: 0.95, surface: 'sofa', region: 'left', timestamp: Date.now() - 300000 },
-                { objectClass: 'remote', confidence: 0.88, surface: 'table', region: 'center', timestamp: Date.now() - 600000 },
-                { objectClass: 'bottle', confidence: 0.92, surface: 'desk', region: 'right', timestamp: Date.now() - 900000 }
-            ];
-            
-            // 優先使用 API 寫入
-            if (this.api.isConnected) {
-                try {
-                    // 使用批次 API 寫入
-                    await this.api.saveDetectionsBatch(demoData);
-                    console.log('Demo 資料已透過 API 寫入');
-                    
-                    // 同時儲存到本地 IndexedDB 作為快取
-                    for (const data of demoData) {
-                        await this.db.saveDetection(data);
-                    }
-                } catch (error) {
-                    console.warn('API 寫入失敗，改用本地儲存:', error);
-                    // Fallback: 直接寫入本地 IndexedDB
-                    for (const data of demoData) {
-                        await this.db.saveDetection(data);
-                    }
-                }
-            } else {
-                // 後端未連線，直接寫入本地 IndexedDB
-                for (const data of demoData) {
-                    await this.db.saveDetection(data);
-                }
-                console.log('Demo 資料已寫入本地 IndexedDB（離線模式）');
-            }
-            
-            await this.loadRecentDetections();
-        }
-    }
-
     loadQuickItems() {
         const DEFAULT_QUICK_ITEMS = [
             { name: '手機', icon: '📱', order: 1 },
             { name: '鑰匙', icon: '🔑', order: 2 },
             { name: '眼鏡', icon: '👓', order: 3 },
-            { name: '錢包', icon: '👛', order: 4 },
-            { name: '耳機', icon: '🎧', order: 5 },
-            { name: '遙控器', icon: '📺', order: 6 }
+            { name: '錢包', icon: '👛', order: 4 }
         ];
         
         const saved = localStorage.getItem('quickItems');
@@ -364,18 +524,17 @@ class ObjectFinderApp {
             // 按物品分類
             const grouped = {};
             for (const det of allDetections) {
-                const key = det.objectClass;
+                const key = det.matchedObjectId || det.objectClass;
                 if (!grouped[key]) {
                     grouped[key] = {
                         objectClass: det.objectClass,
-                        objectClassZh: det.objectClassZh,
+                        objectClassZh: det.objectClassZh || det.matchedObjectName,
                         records: []
                     };
                 }
                 grouped[key].records.push(det);
             }
             
-            // 建立 Modal
             this.showHistoryModal(Object.values(grouped));
             
         } catch (error) {
@@ -385,7 +544,6 @@ class ObjectFinderApp {
     }
 
     showHistoryModal(groupedData) {
-        // 移除舊的 Modal
         const existing = document.getElementById('historyModal');
         if (existing) existing.remove();
         
@@ -398,19 +556,12 @@ class ObjectFinderApp {
             padding: 20px; overflow: hidden;
         `;
         
-        // 格式化時間
         const formatTime = (timestamp) => {
             const date = new Date(timestamp);
             return date.toLocaleString('zh-TW', { 
                 month: 'short', day: 'numeric', 
                 hour: '2-digit', minute: '2-digit' 
             });
-        };
-        
-        // 處理區域顯示
-        const getRegionDisplay = (regionZh) => {
-            if (!regionZh || regionZh === 'unknown' || regionZh === 'undefined') return '';
-            return ' ' + regionZh;
         };
         
         modal.innerHTML = `
@@ -434,19 +585,14 @@ class ObjectFinderApp {
                                     background: rgba(255,255,255,0.05); 
                                     padding: 12px 16px; border-radius: 8px;
                                     display: flex; justify-content: space-between; align-items: center;
-                                " data-image="${record.imagePath || ''}" class="history-item">
+                                ">
                                     <div>
-                                        <div style="color:#fff;">${record.surfaceZh || '未知位置'}${getRegionDisplay(record.regionZh)}</div>
+                                        <div style="color:#fff;">${record.surfaceZh || record.surface || '攝影機'} ${record.regionZh || record.region || ''}</div>
                                         <div style="color:#888; font-size:12px;">${formatTime(record.timestamp)}</div>
                                     </div>
                                     <div style="color:#38ef7d; font-size:14px;">${Math.round(record.confidence * 100)}%</div>
                                 </div>
                             `).join('')}
-                            ${group.records.length > 10 ? `
-                                <div style="color:#888; font-size:12px; text-align:center;">
-                                    還有 ${group.records.length - 10} 筆記錄...
-                                </div>
-                            ` : ''}
                         </div>
                     </div>
                 `).join('')}
@@ -455,23 +601,9 @@ class ObjectFinderApp {
         
         document.body.appendChild(modal);
         
-        // 關閉按鈕
         document.getElementById('closeHistoryBtn').addEventListener('click', () => modal.remove());
-        
-        // 點擊背景關閉
         modal.addEventListener('click', (e) => {
             if (e.target === modal) modal.remove();
-        });
-        
-        // 點擊歷史項目顯示截圖
-        modal.querySelectorAll('.history-item').forEach(item => {
-            item.style.cursor = 'pointer';
-            item.addEventListener('click', () => {
-                const imagePath = item.dataset.image;
-                if (imagePath) {
-                    this.ui.showSnapshot(imagePath);
-                }
-            });
         });
     }
 
@@ -480,24 +612,40 @@ class ObjectFinderApp {
     }
 
     showDetectionDetail(item) {
-        // 從 data 屬性取得資料
-        const result = {
-            objectClassZh: item.dataset.classZh,
-            objectClass: item.dataset.class,
-            surfaceZh: item.dataset.surface,
-            regionZh: item.dataset.region,
-            lastSeen: parseInt(item.dataset.time),
-            confidence: parseFloat(item.dataset.confidence),
-            imagePath: item.dataset.image || null,
-            description: `${item.dataset.classZh}在${item.dataset.surface}${item.dataset.region}`
-        };
+        // 從 recentDetections 陣列取得完整資料（包含 imagePath）
+        const index = parseInt(item.dataset.index);
+        const detection = this.ui.recentDetections?.[index];
         
-        // 使用和搜尋結果一樣的顯示方式
-        this.ui.showResult(result);
+        if (detection) {
+            // 使用完整的偵測資料
+            const result = {
+                objectClassZh: detection.objectClassZh,
+                objectClass: detection.objectClass,
+                surfaceZh: detection.surfaceZh,
+                regionZh: detection.regionZh,
+                lastSeen: detection.timestamp,
+                confidence: detection.confidence,
+                description: `${detection.objectClassZh}在${detection.surfaceZh || ''}${detection.regionZh || ''}`,
+                imagePath: detection.imagePath  // 包含完整 base64 圖片
+            };
+            this.ui.showResult(result);
+        } else {
+            // 後備：使用 data 屬性
+            const result = {
+                objectClassZh: item.dataset.classZh,
+                objectClass: item.dataset.class,
+                surfaceZh: item.dataset.surface,
+                regionZh: item.dataset.region,
+                lastSeen: parseInt(item.dataset.time),
+                confidence: parseFloat(item.dataset.confidence),
+                description: `${item.dataset.classZh}在${item.dataset.surface}${item.dataset.region || ''}`
+            };
+            this.ui.showResult(result);
+        }
     }
 
     connectWebSocket() {
-        const wsUrl = 'ws://localhost:8000/ws/detections';
+        const wsUrl = `ws://${window.location.host}/ws/detections`;
         
         try {
             this.ws = new WebSocket(wsUrl);
@@ -511,35 +659,8 @@ class ObjectFinderApp {
                     const message = JSON.parse(event.data);
                     
                     if (message.type === 'detection' && message.data && message.data.length > 0) {
-                        console.log(`📡 收到定時偵測: ${message.data.length} 個物品`);
-                        
-                        // 去重：同一物品類別只保留信心度最高的
-                        const deduped = {};
-                        for (const det of message.data) {
-                            const key = det.object_class;
-                            if (!deduped[key] || det.confidence > deduped[key].confidence) {
-                                deduped[key] = det;
-                            }
-                        }
-                        
-                        // 儲存到 IndexedDB
-                        for (const det of Object.values(deduped)) {
-                            await this.db.saveDetection({
-                                objectClass: det.object_class,
-                                confidence: det.confidence,
-                                bbox: det.bbox,
-                                surface: det.surface || '未知',
-                                region: det.region || '',
-                                timestamp: det.timestamp || Date.now(),
-                                imagePath: det.image_path || null
-                            });
-                        }
-                        
-                        // 更新最近偵測列表
+                        console.log(`📡 收到偵測結果: ${message.data.length} 個物品`);
                         await this.loadRecentDetections();
-                        
-                        // 顯示通知
-                        this.ui.showToast(`自動偵測到 ${message.data.length} 個物品`, 'info');
                     }
                 } catch (e) {
                     console.error('WebSocket 訊息處理錯誤:', e);

@@ -3,12 +3,122 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="使用 YOLO-World 智慧辨識，幫助您快速找到日常生活用品">
-    <title>日常物品搜尋助手 | Object Finder</title>
+    <meta name="description" content="使用 YOLO12 + DINOv2 個人化物件偵測">
+    <title>日常物品搜尋助手 | FindForYou</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* 攝影機預覽區塊 */
+        .camera-section {
+            margin-bottom: 20px;
+        }
+        .camera-container {
+            position: relative;
+            background: #000;
+            border-radius: 16px;
+            overflow: hidden;
+            aspect-ratio: 16/9;
+            max-height: 300px;
+        }
+        .camera-container video,
+        .camera-container canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .camera-container #previewCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .camera-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .camera-controls select {
+            flex: 1;
+            min-width: 150px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .auto-detect-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255,255,255,0.05);
+            padding: 8px 16px;
+            border-radius: 8px;
+        }
+        .auto-detect-toggle label {
+            color: #aaa;
+            font-size: 14px;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 26px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(245,87,108,0.5);
+            transition: .3s;
+            border-radius: 26px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        input:checked + .toggle-slider {
+            background-color: #38ef7d;
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+        .interval-input {
+            width: 60px;
+            text-align: center;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #fff;
+            padding: 8px;
+            border-radius: 6px;
+        }
+        .camera-off-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #888;
+        }
+        .camera-off-message .icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+    </style>
 </head>
 <body>
     <div class="app-container">
@@ -28,6 +138,45 @@
 
         <!-- 主要內容區 -->
         <main class="main-content">
+            <!-- 攝影機預覽區塊 -->
+            <section class="camera-section">
+                <div class="glass-card">
+                    <h2 class="section-title">
+                        <span class="title-icon">📹</span>
+                        即時預覽
+                    </h2>
+                    <div class="camera-container" id="cameraContainer">
+                        <video id="cameraVideo" autoplay playsinline muted></video>
+                        <canvas id="previewCanvas"></canvas>
+                        <div class="camera-off-message" id="cameraOffMessage">
+                            <div class="icon">📷</div>
+                            <p>點擊下方按鈕開啟攝影機</p>
+                        </div>
+                    </div>
+                    <div class="camera-controls">
+                        <select id="cameraSelect">
+                            <option value="">選擇攝影機...</option>
+                        </select>
+                        <button class="search-btn" id="startCameraBtn" style="padding:10px 20px;">
+                            <span class="btn-icon">📹</span>
+                            <span class="btn-text">開啟攝影機</span>
+                        </button>
+                        <button class="search-btn" id="detectBtn" style="padding:10px 20px; background:linear-gradient(135deg, #667eea, #764ba2);">
+                            <span class="btn-icon">🔍</span>
+                            <span class="btn-text">偵測</span>
+                        </button>
+                        <div class="auto-detect-toggle">
+                            <label>自動偵測</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="autoDetectToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <input type="number" class="interval-input" id="intervalInput" value="5" min="1" max="60"> 秒
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- 搜尋區塊 -->
             <section class="search-section">
                 <div class="search-card glass-card">
@@ -62,12 +211,8 @@
                         <h3 class="result-title" id="resultTitle">搜尋結果</h3>
                     </div>
                     <div class="result-content">
-                        <p class="result-location" id="resultLocation">
-                            <!-- 動態填入位置資訊 -->
-                        </p>
-                        <p class="result-time" id="resultTime">
-                            <!-- 動態填入時間資訊 -->
-                        </p>
+                        <p class="result-location" id="resultLocation"></p>
+                        <p class="result-time" id="resultTime"></p>
                     </div>
                     <div class="result-confidence" id="resultConfidence">
                         <span class="confidence-label">信心度</span>
@@ -103,22 +248,6 @@
                             <span class="item-icon">👛</span>
                             <span class="item-name">錢包</span>
                         </button>
-                        <button class="quick-item-btn" data-item="耳機">
-                            <span class="item-icon">🎧</span>
-                            <span class="item-name">耳機</span>
-                        </button>
-                        <button class="quick-item-btn" data-item="遙控器">
-                            <span class="item-icon">📺</span>
-                            <span class="item-name">遙控器</span>
-                        </button>
-                        <button class="quick-item-btn" data-item="手錶">
-                            <span class="item-icon">⌚</span>
-                            <span class="item-name">手錶</span>
-                        </button>
-                        <button class="quick-item-btn" data-item="包包">
-                            <span class="item-icon">👜</span>
-                            <span class="item-name">包包</span>
-                        </button>
                     </div>
                 </div>
             </section>
@@ -134,7 +263,7 @@
                         <div class="empty-state">
                             <span class="empty-icon">📭</span>
                             <p>尚無偵測記錄</p>
-                            <p class="empty-hint">系統開始運行後，偵測到的物品會顯示在這裡</p>
+                            <p class="empty-hint">開啟攝影機並點擊偵測按鈕開始</p>
                         </div>
                     </div>
                 </div>
@@ -144,25 +273,6 @@
         <!-- 底部控制列 -->
         <footer class="footer">
             <div class="footer-content">
-                <!-- 攝影機選擇 -->
-                <div class="camera-select-wrapper" style="display:flex; align-items:center; gap:8px;">
-                    <label style="color:#aaa; font-size:12px;">📹</label>
-                    <select id="cameraSelect" style="
-                        background: rgba(255,255,255,0.1);
-                        border: 1px solid rgba(255,255,255,0.2);
-                        color: #fff;
-                        padding: 6px 12px;
-                        border-radius: 8px;
-                        font-size: 12px;
-                        cursor: pointer;
-                    ">
-                        <option value="0">攝影機 0</option>
-                    </select>
-                </div>
-                <button class="footer-btn" id="manualScanBtn">
-                    <span class="btn-icon">📷</span>
-                    <span class="btn-text">手動掃描</span>
-                </button>
                 <button class="footer-btn" id="historyBtn">
                     <span class="btn-icon">📋</span>
                     <span class="btn-text">歷史記錄</span>

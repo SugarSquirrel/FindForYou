@@ -77,7 +77,6 @@
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(56,239,125,0.4); }
         .btn-danger { background: #f5576c; color: #fff; }
         .btn-secondary { background: rgba(255,255,255,0.1); color: #fff; }
-        .btn-preview { background: #4a90d9; color: #fff; padding: 8px 12px; font-size: 12px; }
         
         /* 輸入框 */
         input, select, textarea {
@@ -158,14 +157,8 @@
             background: rgba(56,239,125,0.2);
             border-color: #38ef7d;
         }
-        .add-object-btn .icon {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
-        .add-object-btn span {
-            color: #38ef7d;
-            font-weight: 500;
-        }
+        .add-object-btn .icon { font-size: 48px; margin-bottom: 10px; }
+        .add-object-btn span { color: #38ef7d; font-weight: 500; }
         
         /* Modal */
         .modal {
@@ -184,15 +177,8 @@
             max-width: 500px;
             width: 90%;
         }
-        .modal-content h3 {
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .modal-content .form-group {
-            margin-bottom: 16px;
-        }
+        .modal-content h3 { margin-bottom: 20px; }
+        .modal-content .form-group { margin-bottom: 16px; }
         .modal-content label {
             display: block;
             color: #aaa;
@@ -206,7 +192,7 @@
             margin-top: 20px;
         }
         
-        /* 圖片上傳區域 */
+        /* 上傳區 */
         .upload-area {
             border: 2px dashed rgba(255,255,255,0.3);
             border-radius: 12px;
@@ -219,64 +205,14 @@
             border-color: #38ef7d;
             background: rgba(56,239,125,0.1);
         }
-        .upload-area.has-image {
-            padding: 10px;
-        }
+        .upload-area.has-image { padding: 10px; }
         .upload-area img {
             max-width: 100%;
             max-height: 200px;
             border-radius: 8px;
         }
-        .upload-area .placeholder {
-            color: #888;
-        }
-        .upload-area .placeholder .icon {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
-        
-        /* 攝影機列表 */
-        .camera-list { display: flex; flex-direction: column; gap: 12px; }
-        .camera-item {
-            display: grid;
-            grid-template-columns: 80px 1fr 1fr auto;
-            gap: 12px;
-            align-items: center;
-            padding: 16px;
-            background: rgba(0,0,0,0.2);
-            border-radius: 12px;
-        }
-        .camera-id { font-weight: bold; color: #38ef7d; }
-        .btn-group { display: flex; gap: 8px; }
-        
-        /* Toggle Switch */
-        .switch {
-            position: relative;
-            width: 60px;
-            height: 34px;
-        }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background-color: rgba(245,87,108,0.5);
-            transition: .4s;
-            border-radius: 34px;
-        }
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 26px;
-            width: 26px;
-            left: 4px;
-            bottom: 4px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
-        input:checked + .slider { background-color: #38ef7d; }
-        input:checked + .slider:before { transform: translateX(26px); }
+        .upload-area .placeholder { color: #888; }
+        .upload-area .placeholder .icon { font-size: 48px; margin-bottom: 10px; }
         
         /* Toast */
         .toast {
@@ -295,17 +231,25 @@
             to { transform: translateY(0); opacity: 1; }
         }
         
-        /* 狀態標籤 */
-        .status { padding: 4px 12px; border-radius: 12px; font-size: 12px; }
-        .status.active { background: rgba(56,239,125,0.2); color: #38ef7d; }
-        .status.inactive { background: rgba(245,87,108,0.2); color: #f5576c; }
-        
-        .empty-state {
-            text-align: center;
-            padding: 40px;
-            color: #888;
+        .info-box {
+            background: rgba(56,239,125,0.1);
+            border-left: 4px solid #38ef7d;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
         }
-        .empty-state .icon { font-size: 48px; margin-bottom: 15px; }
+        .info-box .title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+        .info-box p {
+            color: #aaa;
+            font-size: 14px;
+            line-height: 1.6;
+        }
     </style>
 </head>
 <body>
@@ -315,6 +259,15 @@
             <h1>⚙️ 設定</h1>
         </div>
         
+        <!-- 說明 -->
+        <div class="info-box">
+            <div class="title">📹 前端攝影機架構</div>
+            <p>
+                攝影機由瀏覽器直接控制，無需後端配置。在首頁點擊「開啟攝影機」即可開始偵測。
+                請確保已授權瀏覽器使用攝影機權限。
+            </p>
+        </div>
+        
         <!-- 我的物品 -->
         <div class="card">
             <h2>📦 我的物品</h2>
@@ -322,50 +275,6 @@
             
             <div class="object-grid" id="objectGrid">
                 <!-- 動態填入 -->
-            </div>
-        </div>
-        
-        <!-- 攝影機配置 -->
-        <div class="card">
-            <h2>📹 攝影機配置</h2>
-            <p class="desc">設定每個攝影機的名稱與所在位置，偵測結果會自動使用攝影機位置。</p>
-            
-            <div class="camera-list" id="cameraList"></div>
-            
-            <div style="display:grid; grid-template-columns: 100px 1fr 1fr auto; gap:12px; padding:16px; background:rgba(56,239,125,0.1); border-radius:12px; border:2px dashed rgba(56,239,125,0.3); margin-top:16px;">
-                <input type="number" id="newCameraId" placeholder="編號" min="0" max="10">
-                <input type="text" id="newCameraName" placeholder="攝影機名稱">
-                <input type="text" id="newCameraLocation" placeholder="所在位置">
-                <button class="btn btn-primary" onclick="addCamera()">新增</button>
-            </div>
-        </div>
-        
-        <!-- 偵測到的攝影機 -->
-        <div class="card">
-            <h2>🔍 偵測到的攝影機</h2>
-            <p class="desc">系統偵測到的可用攝影機清單</p>
-            <div id="availableCameras">載入中...</div>
-        </div>
-        
-        <!-- 自動偵測 -->
-        <div class="card">
-            <h2>⏱️ 自動偵測</h2>
-            <p class="desc">啟用後系統會定時自動掃描攝影機並記錄物品位置</p>
-            
-            <div style="display:flex; align-items:center; justify-content:space-between; padding:16px; background:rgba(0,0,0,0.2); border-radius:12px;">
-                <div>
-                    <span style="font-size:16px;">自動偵測</span>
-                    <span id="schedulerStatus" class="status inactive">已停止</span>
-                </div>
-                <label class="switch">
-                    <input type="checkbox" id="schedulerSwitch" onchange="toggleScheduler()">
-                    <span class="slider"></span>
-                </label>
-            </div>
-            
-            <div style="margin-top:15px; display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:center;">
-                <label style="color:#aaa;">偵測間隔（秒）</label>
-                <input type="number" id="intervalInput" value="30" min="5" max="300" style="width:100px; text-align:center;" onchange="setDetectionInterval()">
             </div>
         </div>
         
@@ -383,13 +292,19 @@
                 <button class="btn btn-primary" onclick="addQuickItem()">新增</button>
             </div>
         </div>
+        
+        <!-- 系統資訊 -->
+        <div class="card">
+            <h2>ℹ️ 系統資訊</h2>
+            <div id="systemInfo" style="color:#aaa;">載入中...</div>
+        </div>
     </div>
 
     <script>
-        const API_BASE = '';  // Same origin
+        const API_BASE = '';
         
         // ========================================
-        // 物品管理功能 (新)
+        // 物品管理
         // ========================================
         
         async function loadObjects() {
@@ -400,8 +315,8 @@
             } catch (e) {
                 console.error('載入物品失敗', e);
                 document.getElementById('objectGrid').innerHTML = `
-                    <div class="empty-state">
-                        <div class="icon">⚠️</div>
+                    <div style="text-align:center; padding:40px; color:#888;">
+                        <div style="font-size:48px; margin-bottom:15px;">⚠️</div>
                         <p>無法連接後端服務</p>
                     </div>
                 `;
@@ -422,7 +337,6 @@
                 </div>
             `).join('');
             
-            // 新增物品按鈕
             html += `
                 <div class="add-object-btn" onclick="showRegisterModal()">
                     <div class="icon">➕</div>
@@ -433,7 +347,6 @@
             container.innerHTML = html;
         }
         
-        // 顯示註冊 Modal
         function showRegisterModal() {
             const modal = document.createElement('div');
             modal.className = 'modal';
@@ -498,12 +411,8 @@
                 showToast('請選擇照片');
                 return;
             }
-            if (!name) {
-                showToast('請輸入物品名稱');
-                return;
-            }
-            if (!nameZh) {
-                showToast('請輸入中文名稱');
+            if (!name || !nameZh) {
+                showToast('請填寫完整資訊');
                 return;
             }
             
@@ -533,7 +442,6 @@
             }
         }
         
-        // 顯示物品詳情
         async function showObjectDetail(objId) {
             try {
                 const res = await fetch(`${API_BASE}/api/objects/${objId}`);
@@ -702,199 +610,6 @@
         }
         
         // ========================================
-        // 攝影機相關功能
-        // ========================================
-        
-        async function loadConfig() {
-            try {
-                const res = await fetch(`${API_BASE}/api/cameras/config`);
-                const data = await res.json();
-                renderCameraList(data.cameras || {});
-            } catch (e) {
-                console.error('載入配置失敗', e);
-            }
-        }
-        
-        async function loadAvailableCameras() {
-            try {
-                const res = await fetch(`${API_BASE}/api/cameras`);
-                const data = await res.json();
-                const container = document.getElementById('availableCameras');
-                
-                if (data.cameras && data.cameras.length > 0) {
-                    container.innerHTML = data.cameras.map(c => 
-                        `<span class="status active" style="margin-right:8px;">📹 ${c.name}</span>`
-                    ).join('');
-                } else {
-                    container.innerHTML = '<span style="color:#aaa">未偵測到攝影機</span>';
-                }
-            } catch (e) {
-                document.getElementById('availableCameras').innerHTML = '<span style="color:#f5576c">無法連接後端</span>';
-            }
-        }
-        
-        function renderCameraList(cameras) {
-            const container = document.getElementById('cameraList');
-            const entries = Object.entries(cameras);
-            
-            if (entries.length === 0) {
-                container.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">尚未配置任何攝影機</p>';
-                return;
-            }
-            
-            container.innerHTML = entries.map(([id, cam]) => `
-                <div class="camera-item" data-id="${id}">
-                    <span class="camera-id">攝影機 ${id}</span>
-                    <input type="text" value="${cam.name}" placeholder="名稱" onchange="updateCamera('${id}')">
-                    <input type="text" value="${cam.location}" placeholder="位置" onchange="updateCamera('${id}')">
-                    <div class="btn-group">
-                        <button class="btn btn-preview" onclick="previewCamera('${id}')">👁 預覽</button>
-                        <button class="btn btn-danger" onclick="deleteCamera('${id}')">刪除</button>
-                    </div>
-                </div>
-            `).join('');
-        }
-        
-        async function previewCamera(id) {
-            showToast('載入預覽中...');
-            try {
-                const res = await fetch(`${API_BASE}/api/cameras/${id}/preview`);
-                const data = await res.json();
-                if (data.success) {
-                    const modal = document.createElement('div');
-                    modal.className = 'modal';
-                    modal.id = 'previewModal';
-                    modal.innerHTML = `
-                        <div class="modal-content" style="max-width:700px;">
-                            <h3>📹 攝影機 ${id} 預覽</h3>
-                            <img src="${data.image}" style="width:100%; border-radius:8px; margin-bottom:15px;">
-                            <div class="btn-group">
-                                <button class="btn btn-secondary" onclick="closeModal('previewModal')">關閉</button>
-                                <button class="btn btn-primary" onclick="closeModal('previewModal'); previewCamera('${id}')">重新整理</button>
-                            </div>
-                        </div>
-                    `;
-                    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal('previewModal'); });
-                    document.body.appendChild(modal);
-                }
-            } catch (e) {
-                showToast('預覽失敗');
-            }
-        }
-        
-        async function updateCamera(id) {
-            const item = document.querySelector(`.camera-item[data-id="${id}"]`);
-            const name = item.querySelectorAll('input')[0].value;
-            const location = item.querySelectorAll('input')[1].value;
-            
-            await fetch(`${API_BASE}/api/cameras/config`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ camera_id: id, name, location, enabled: true })
-            });
-            showToast('配置已儲存');
-        }
-        
-        async function addCamera() {
-            const id = document.getElementById('newCameraId').value;
-            const name = document.getElementById('newCameraName').value || `攝影機 ${id}`;
-            const location = document.getElementById('newCameraLocation').value || '未設定';
-            
-            if (!id) { alert('請輸入攝影機編號'); return; }
-            
-            await fetch(`${API_BASE}/api/cameras/config`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ camera_id: id, name, location, enabled: true })
-            });
-            
-            document.getElementById('newCameraId').value = '';
-            document.getElementById('newCameraName').value = '';
-            document.getElementById('newCameraLocation').value = '';
-            
-            showToast('攝影機已新增');
-            loadConfig();
-        }
-        
-        async function deleteCamera(id) {
-            if (!confirm(`確定要刪除攝影機 ${id} 的配置？`)) return;
-            await fetch(`${API_BASE}/api/cameras/config/${id}`, { method: 'DELETE' });
-            showToast('配置已刪除');
-            loadConfig();
-        }
-        
-        // ========================================
-        // 排程器控制
-        // ========================================
-        
-        async function loadSchedulerStatus() {
-            try {
-                const res = await fetch(`${API_BASE}/api/health`);
-                const data = await res.json();
-                
-                const switchEl = document.getElementById('schedulerSwitch');
-                const statusEl = document.getElementById('schedulerStatus');
-                
-                if (data.scheduler_running) {
-                    switchEl.checked = true;
-                    statusEl.className = 'status active';
-                    statusEl.textContent = '運行中';
-                } else {
-                    switchEl.checked = false;
-                    statusEl.className = 'status inactive';
-                    statusEl.textContent = '已停止';
-                }
-            } catch (e) {
-                console.error('載入排程器狀態失敗', e);
-            }
-        }
-        
-        async function toggleScheduler() {
-            const switchEl = document.getElementById('schedulerSwitch');
-            const statusEl = document.getElementById('schedulerStatus');
-            const action = switchEl.checked ? 'start' : 'stop';
-            
-            try {
-                const res = await fetch(`${API_BASE}/api/scheduler/${action}`, { method: 'POST' });
-                const data = await res.json();
-                
-                if (data.success) {
-                    if (switchEl.checked) {
-                        statusEl.className = 'status active';
-                        statusEl.textContent = '運行中';
-                        showToast('自動偵測已啟動');
-                    } else {
-                        statusEl.className = 'status inactive';
-                        statusEl.textContent = '已停止';
-                        showToast('自動偵測已停止');
-                    }
-                }
-            } catch (e) {
-                switchEl.checked = !switchEl.checked;
-                showToast('操作失敗');
-            }
-        }
-        
-        async function setDetectionInterval() {
-            const interval = parseInt(document.getElementById('intervalInput').value);
-            if (interval < 5 || interval > 300) {
-                showToast('間隔必須在 5-300 秒之間');
-                return;
-            }
-            
-            try {
-                await fetch(`${API_BASE}/api/scheduler/interval`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ interval })
-                });
-                showToast(`偵測間隔已設為 ${interval} 秒`);
-            } catch (e) {
-                console.error('設定間隔失敗', e);
-            }
-        }
-        
-        // ========================================
         // 常用物品管理
         // ========================================
         
@@ -970,6 +685,38 @@
         }
         
         // ========================================
+        // 系統資訊
+        // ========================================
+        
+        async function loadSystemInfo() {
+            try {
+                const res = await fetch(`${API_BASE}/api/health`);
+                const data = await res.json();
+                
+                document.getElementById('systemInfo').innerHTML = `
+                    <div style="display:grid; gap:8px;">
+                        <div style="display:flex; justify-content:space-between;">
+                            <span>版本</span>
+                            <span>${data.version}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span>偵測器狀態</span>
+                            <span style="color:${data.detector_ready ? '#38ef7d' : '#f5576c'};">
+                                ${data.detector_ready ? '就緒' : '未就緒'}
+                            </span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span>已註冊物品</span>
+                            <span>${data.registered_objects} 個</span>
+                        </div>
+                    </div>
+                `;
+            } catch (e) {
+                document.getElementById('systemInfo').innerHTML = '<span style="color:#f5576c;">無法連接後端</span>';
+            }
+        }
+        
+        // ========================================
         // 工具函數
         // ========================================
         
@@ -983,10 +730,8 @@
         
         // 初始化
         loadObjects();
-        loadConfig();
-        loadAvailableCameras();
-        loadSchedulerStatus();
         loadQuickItems();
+        loadSystemInfo();
     </script>
 </body>
 </html>

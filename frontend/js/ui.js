@@ -67,6 +67,11 @@ class ObjectFinderUI {
         this.elements.confidenceFill.style.width = `${confidence}%`;
         this.elements.confidenceValue.textContent = `${confidence}%`;
         
+        // 除錯：檢查是否有圖片
+        console.log('🔍 搜尋結果:', result);
+        console.log('🔍 imagePath 存在:', !!result.imagePath);
+        console.log('🔍 imagePath 長度:', result.imagePath?.length || 0);
+        
         // 如果有截圖，顯示在結果區
         const existingImg = section.querySelector('.result-image');
         if (existingImg) existingImg.remove();
@@ -117,7 +122,7 @@ class ObjectFinderUI {
             <div class="recent-item clickable" data-index="${index}" data-class="${d.objectClass}" 
                  data-class-zh="${d.objectClassZh}" data-surface="${d.surfaceZh || ''}" 
                  data-region="${regionDisplay}" data-time="${d.timestamp}" 
-                 data-confidence="${d.confidence || 0.9}" data-image="${d.imagePath || ''}"
+                 data-confidence="${d.confidence || 0.9}"
                  style="cursor: pointer;">
                 <span class="recent-item-icon">${this.getObjectIcon(d.objectClass)}</span>
                 <div class="recent-item-info">
