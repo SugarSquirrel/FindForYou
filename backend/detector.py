@@ -369,7 +369,8 @@ class ObjectDetector:
                 
                 return surface_name, region
         
-        return "unknown", "unknown"
+        # 返回空值，讓 main.py 使用攝影機配置的位置覆蓋
+        return "", ""
     
     def _get_mock_detections(self) -> List[Detection]:
         """產生模擬偵測資料（用於測試）"""

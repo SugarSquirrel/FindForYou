@@ -154,9 +154,10 @@ class ObjectFinderDB {
             confidence: detection.confidence,
             bbox: detection.bbox,
             surface: detection.surface,
-            surfaceZh: SURFACE_MAP[detection.surface] || detection.surface,
-            region: detection.region,
-            regionZh: REGION_MAP[detection.region] || detection.region,
+            // 如果 surface 已經是中文（不在英文映射表中），就直接使用
+            surfaceZh: SURFACE_MAP[detection.surface] || detection.surface || '未知位置',
+            region: detection.region || '',
+            regionZh: REGION_MAP[detection.region] || detection.region || '',
             imagePath: detection.imagePath || null  // 儲存截圖路徑
         };
 

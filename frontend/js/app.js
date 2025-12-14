@@ -386,8 +386,8 @@ class ObjectFinderApp {
                                 objectClass: det.object_class,
                                 confidence: det.confidence,
                                 bbox: det.bbox,
-                                surface: det.surface || 'unknown',
-                                region: det.region || 'unknown',
+                                surface: det.surface || '未知',
+                                region: det.region || '',
                                 timestamp: det.timestamp || Date.now(),
                                 imagePath: det.image_path || null
                             });

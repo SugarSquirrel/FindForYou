@@ -108,20 +108,25 @@ class ObjectFinderUI {
             container.innerHTML = `<div class="empty-state"><span class="empty-icon">📭</span><p>尚無偵測記錄</p></div>`;
             return;
         }
-        container.innerHTML = detections.map((d, index) => `
+        container.innerHTML = detections.map((d, index) => {
+            // 處理 region 顯示，如果是 unknown 或空值就不顯示
+            const regionDisplay = (d.regionZh && d.regionZh !== 'unknown' && d.regionZh !== 'undefined') ? d.regionZh : '';
+            const locationDisplay = `${d.surfaceZh || ''}${regionDisplay ? ' ' + regionDisplay : ''}`.trim() || '未知位置';
+            
+            return `
             <div class="recent-item clickable" data-index="${index}" data-class="${d.objectClass}" 
-                 data-class-zh="${d.objectClassZh}" data-surface="${d.surfaceZh}" 
-                 data-region="${d.regionZh}" data-time="${d.timestamp}" 
+                 data-class-zh="${d.objectClassZh}" data-surface="${d.surfaceZh || ''}" 
+                 data-region="${regionDisplay}" data-time="${d.timestamp}" 
                  data-confidence="${d.confidence || 0.9}" data-image="${d.imagePath || ''}"
                  style="cursor: pointer;">
                 <span class="recent-item-icon">${this.getObjectIcon(d.objectClass)}</span>
                 <div class="recent-item-info">
                     <div class="recent-item-name">${d.objectClassZh}</div>
-                    <div class="recent-item-location">${d.surfaceZh} ${d.regionZh}</div>
+                    <div class="recent-item-location">${locationDisplay}</div>
                 </div>
                 <div class="recent-item-time">${this.formatTimeAgo(d.timestamp)}</div>
             </div>
-        `).join('');
+        `}).join('');
         
         // 儲存偵測資料供點擊使用
         this.recentDetections = detections;

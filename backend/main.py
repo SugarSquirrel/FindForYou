@@ -656,9 +656,17 @@ async def broadcast_detection(detections_input):
         else:
             data = d if isinstance(d, dict) else {}
         
-        # 使用攝影機配置的位置覆蓋 surface
-        if camera_location != "unknown":
-            data['surface'] = camera_location
+        # 如果 surface 為空或為 unknown，使用攝影機配置的位置
+        current_surface = data.get('surface', '')
+        if not current_surface or current_surface == 'unknown':
+            if camera_location and camera_location != 'unknown':
+                data['surface'] = camera_location
+            else:
+                data['surface'] = '未知位置'
+        
+        # 如果 region 為 unknown，清空
+        if data.get('region') == 'unknown':
+            data['region'] = ''
         
         # 加上圖片路徑
         if image_path:
