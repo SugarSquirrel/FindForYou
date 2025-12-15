@@ -45,6 +45,8 @@ env/
 # Training outputs and runs
 runs/
 train/runs/
+train/yolov12/
+train/yolov12.zip
 
 # Datasets (too large for git)
 datasets/

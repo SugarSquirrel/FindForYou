@@ -118,18 +118,27 @@ class ObjectFinderUI {
             const regionDisplay = (d.regionZh && d.regionZh !== 'unknown' && d.regionZh !== 'undefined') ? d.regionZh : '';
             const locationDisplay = `${d.surfaceZh || ''}${regionDisplay ? ' ' + regionDisplay : ''}`.trim() || '未知位置';
             
+            // 判斷是否為未匹配的物品（可以註冊）
+            // matchedObjectId 可能是 null, undefined, 或空字串
+            const isUnmatched = !d.matchedObjectId || d.matchedObjectId === '';
+            console.log(`📦 ${d.objectClassZh}: matchedObjectId=${d.matchedObjectId}, isUnmatched=${isUnmatched}`);
+            const registerBtn = isUnmatched ? 
+                `<button class="register-btn" data-index="${index}" onclick="event.stopPropagation(); window.app.showRegisterModal(${index});">➕ 註冊</button>` : 
+                '';
+            
             return `
             <div class="recent-item clickable" data-index="${index}" data-class="${d.objectClass}" 
                  data-class-zh="${d.objectClassZh}" data-surface="${d.surfaceZh || ''}" 
                  data-region="${regionDisplay}" data-time="${d.timestamp}" 
                  data-confidence="${d.confidence || 0.9}"
-                 style="cursor: pointer;">
+                 style="cursor: pointer; display: flex; align-items: center;">
                 <span class="recent-item-icon">${this.getObjectIcon(d.objectClass)}</span>
-                <div class="recent-item-info">
+                <div class="recent-item-info" style="flex: 1;">
                     <div class="recent-item-name">${d.objectClassZh}</div>
                     <div class="recent-item-location">${locationDisplay}</div>
                 </div>
-                <div class="recent-item-time">${this.formatTimeAgo(d.timestamp)}</div>
+                <div class="recent-item-time" style="margin-right: 10px;">${this.formatTimeAgo(d.timestamp)}</div>
+                ${registerBtn}
             </div>
         `}).join('');
         

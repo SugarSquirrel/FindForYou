@@ -223,6 +223,78 @@ async def register_object(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class RegisterCroppedRequest(BaseModel):
+    """從偵測結果註冊物品的請求"""
+    image_base64: str  # 完整圖片的 base64
+    bbox: List[float]  # [x1, y1, x2, y2]
+    name: str
+    name_zh: str
+
+
+@app.post("/api/objects/register-cropped")
+async def register_object_cropped(request: RegisterCroppedRequest):
+    """
+    從偵測結果中註冊物品
+    接收完整圖片的 base64 和 bbox，裁切後進行註冊
+    """
+    if detector is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    try:
+        import base64
+        
+        # 解析 base64 圖片
+        image_data = request.image_base64
+        if image_data.startswith("data:"):
+            # 移除 data:image/jpeg;base64, 前綴
+            image_data = image_data.split(",")[1]
+        
+        img_bytes = base64.b64decode(image_data)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="無法解析圖片")
+        
+        # 使用 bbox 裁切圖片
+        x1, y1, x2, y2 = [int(v) for v in request.bbox]
+        h, w = img.shape[:2]
+        
+        # 邊界檢查
+        x1 = max(0, min(x1, w-1))
+        y1 = max(0, min(y1, h-1))
+        x2 = max(x1+1, min(x2, w))
+        y2 = max(y1+1, min(y2, h))
+        
+        cropped = img[y1:y2, x1:x2]
+        
+        if cropped.size == 0:
+            raise HTTPException(status_code=400, detail="裁切區域無效")
+        
+        # 註冊物品（不再使用 YOLO 裁切，直接使用已裁切的圖片）
+        result = detector.register_object_direct(
+            name=request.name,
+            name_zh=request.name_zh,
+            image=cropped
+        )
+        
+        if result:
+            return {
+                "success": True,
+                "message": f"已註冊物品: {request.name_zh}",
+                "object": result
+            }
+        else:
+            raise HTTPException(status_code=500, detail="註冊失敗")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/objects/{obj_id}/images")
 async def add_object_image(obj_id: str, image: UploadFile = File(...)):
     """為物品新增照片"""

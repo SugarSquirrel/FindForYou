@@ -106,6 +106,10 @@ class FeatureExtractor:
             
         return features.cpu().numpy().flatten()
     
+    def extract(self, image: Union[np.ndarray, Image.Image, str]) -> np.ndarray:
+        """extract_features 的別名"""
+        return self.extract_features(image)
+    
     def extract_features_batch(
         self, 
         images: List[Union[np.ndarray, Image.Image]]
@@ -155,9 +159,9 @@ class FeatureExtractor:
         Returns:
             相似度 (0~1)
         """
-        # 確保是 1D 向量
-        e1 = embedding1.flatten()
-        e2 = embedding2.flatten()
+        # 確保是 numpy array，然後轉為 1D 向量
+        e1 = np.asarray(embedding1).flatten()
+        e2 = np.asarray(embedding2).flatten()
         
         # 計算餘弦相似度
         dot_product = np.dot(e1, e2)

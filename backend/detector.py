@@ -71,7 +71,11 @@ CLASS_NAMES_ZH = {
     "oven": "烤箱", "toaster": "烤麵包機", "sink": "水槽",
     "refrigerator": "冰箱", "book": "書", "clock": "時鐘",
     "vase": "花瓶", "scissors": "剪刀", "teddy bear": "泰迪熊",
-    "hair drier": "吹風機", "toothbrush": "牙刷"
+    "hair drier": "吹風機", "toothbrush": "牙刷",
+    # Finetune 模型自訂類別
+    "cell_phone": "手機", "wallet": "錢包", "key": "鑰匙",
+    "remote_control": "遙控器", "watch": "手錶", "earphone": "耳機",
+    "cup": "杯子", "bottle": "水瓶"
 }
 
 
@@ -274,6 +278,46 @@ class ObjectDetector:
         img_name = f"{name}_{timestamp}.jpg"
         img_path = os.path.join(img_dir, img_name)
         cv2.imwrite(img_path, target_image)
+        
+        # 註冊到資料庫
+        obj = self.object_registry.register(
+            name=name,
+            name_zh=name_zh,
+            embedding=embedding,
+            image_path=img_path
+        )
+        
+        if obj:
+            return {
+                "id": obj.id,
+                "name": obj.name,
+                "name_zh": obj.name_zh,
+                "embedding_count": len(obj.embeddings),
+                "thumbnail": f"/object_images/{img_name}"
+            }
+        return None
+    
+    def register_object_direct(self, name: str, name_zh: str, image: np.ndarray) -> Optional[dict]:
+        """直接註冊物品（不使用 YOLO 裁切，適用於已裁切的偵測結果）"""
+        if self.object_registry is None or self.feature_extractor is None:
+            return None
+        
+        # 直接使用傳入的圖片，不進行 YOLO 裁切
+        embedding = self.feature_extractor.extract(image)
+        if embedding is None:
+            return None
+        
+        # 儲存圖片
+        import os
+        from datetime import datetime
+        
+        img_dir = os.path.join(os.path.dirname(__file__), "object_images")
+        os.makedirs(img_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        img_name = f"{name}_{timestamp}.jpg"
+        img_path = os.path.join(img_dir, img_name)
+        cv2.imwrite(img_path, image)
         
         # 註冊到資料庫
         obj = self.object_registry.register(

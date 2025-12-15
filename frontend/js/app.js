@@ -682,6 +682,112 @@ class ObjectFinderApp {
             console.error('WebSocket 連線失敗:', error);
         }
     }
+
+    // ========================================
+    // 從偵測結果註冊物品
+    // ========================================
+
+    showRegisterModal(detectionIndex) {
+        const detection = this.ui.recentDetections?.[detectionIndex];
+        if (!detection) {
+            this.ui.showToast('找不到偵測資料', 'error');
+            return;
+        }
+
+        // 儲存當前要註冊的偵測
+        this.pendingRegistration = {
+            detection: detection,
+            imageBase64: detection.imagePath,
+            bbox: detection.bbox
+        };
+
+        // 顯示 modal
+        const modal = document.getElementById('registerModal');
+        const cropImage = document.getElementById('registerCropImage');
+        const nameEn = document.getElementById('registerNameEn');
+        const nameZh = document.getElementById('registerNameZh');
+
+        // 顯示裁切圖片
+        if (detection.imagePath) {
+            cropImage.src = detection.imagePath;
+        } else {
+            cropImage.src = '';
+        }
+
+        // 預填名稱建議
+        nameEn.value = detection.objectClass?.replace(/\s+/g, '_') || '';
+        nameZh.value = detection.objectClassZh || '';
+
+        modal.style.display = 'flex';
+
+        // 綁定事件
+        const closeBtn = document.getElementById('closeRegisterModal');
+        const confirmBtn = document.getElementById('confirmRegisterBtn');
+
+        closeBtn.onclick = () => {
+            modal.style.display = 'none';
+            this.pendingRegistration = null;
+        };
+
+        confirmBtn.onclick = () => this.registerFromDetection();
+
+        // 點擊背景關閉
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+                this.pendingRegistration = null;
+            }
+        };
+    }
+
+    async registerFromDetection() {
+        if (!this.pendingRegistration) {
+            this.ui.showToast('沒有待註冊的物品', 'error');
+            return;
+        }
+
+        const nameEn = document.getElementById('registerNameEn').value.trim();
+        const nameZh = document.getElementById('registerNameZh').value.trim();
+
+        if (!nameEn || !nameZh) {
+            this.ui.showToast('請填寫英文和中文名稱', 'warning');
+            return;
+        }
+
+        this.ui.showLoading('正在註冊...');
+
+        try {
+            const response = await fetch('/api/objects/register-cropped', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    image_base64: this.pendingRegistration.imageBase64,
+                    bbox: this.pendingRegistration.bbox || [0, 0, 100, 100],
+                    name: nameEn,
+                    name_zh: nameZh
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.ui.showToast(`已註冊: ${nameZh}`, 'success');
+                document.getElementById('registerModal').style.display = 'none';
+                this.pendingRegistration = null;
+                
+                // 重新載入最近偵測列表
+                await this.loadRecentDetections();
+            } else {
+                throw new Error(result.detail || '註冊失敗');
+            }
+
+        } catch (error) {
+            console.error('註冊失敗:', error);
+            this.ui.showToast('註冊失敗: ' + error.message, 'error');
+        } finally {
+            this.ui.hideLoading();
+        }
+    }
 }
 
 // 頁面載入後初始化
