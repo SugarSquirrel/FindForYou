@@ -67,14 +67,48 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 伺服器會在 `http://localhost:8000` 啟動。
 
-### 2. 註冊你的物品
+### 2. 遠端/跨裝置連線
+
+#### 同網路連線（區域網路）
+
+在同一 WiFi/路由器下的其他裝置，使用本機 IP 連線：
+
+```bash
+# 查詢本機 IP
+ipconfig  # Windows
+ifconfig  # macOS/Linux
+
+# 其他裝置訪問
+http://<本機IP>:8000
+```
+
+> ⚠️ 手機瀏覽器使用攝影機需要 HTTPS，請參考下方 ngrok 方案。
+
+#### 跨網路連線（使用 ngrok）
+
+透過 [ngrok](https://ngrok.com/) 將本機服務暴露到公網：
+
+```bash
+# 1. 安裝 ngrok
+winget install ngrok  # 或從官網下載
+
+# 2. 設定 authtoken（註冊免費帳號取得）
+ngrok config add-authtoken <your-token>
+
+# 3. 啟動隧道
+ngrok http 8000
+```
+
+ngrok 會提供一個 HTTPS 公開網址（如 `https://xxxx.ngrok-free.app`），任何裝置都可透過此網址連線。
+
+### 3. 註冊你的物品
 
 1. 開啟 `http://localhost:8000/settings`
 2. 在「我的物品」區塊點擊「新增物品」
 3. 上傳物品照片，輸入名稱
 4. 可為同一物品新增多張不同角度的照片，提高識別準確度
 
-### 3. 開始偵測
+### 4. 開始偵測
 
 1. 開啟 `http://localhost:8000`
 2. 點擊偵測按鈕，系統會識別畫面中你的物品

@@ -645,7 +645,9 @@ class ObjectFinderApp {
     }
 
     connectWebSocket() {
-        const wsUrl = `ws://${window.location.host}/ws/detections`;
+        // 根據頁面協議自動選擇 ws:// 或 wss://
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/detections`;
         
         try {
             this.ws = new WebSocket(wsUrl);
