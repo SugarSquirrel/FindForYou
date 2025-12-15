@@ -174,6 +174,14 @@
                             <input type="number" class="interval-input" id="intervalInput" value="5" min="1" max="60"> 秒
                         </div>
                     </div>
+                    <!-- 多攝影機選擇區 (自動偵測開啟時顯示) -->
+                    <div id="multiCameraSelect" style="display:none; margin-top:15px; padding:15px; background:rgba(102,126,234,0.1); border-radius:12px; border:1px solid rgba(102,126,234,0.3);">
+                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                            <span style="color:#667eea;">📹</span>
+                            <span style="color:#aaa; font-size:14px;">選擇要自動輪流偵測的攝影機：</span>
+                        </div>
+                        <div id="cameraCheckboxList" style="display:flex; flex-wrap:wrap; gap:10px;"></div>
+                    </div>
                 </div>
             </section>
 
@@ -363,10 +371,10 @@
     <!-- Toast 通知 -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <!-- JavaScript (v4 - clean image for registration) -->
-    <script src="js/db.js?v=4"></script>
-    <script src="js/api.js?v=4"></script>
-    <script src="js/ui.js?v=4"></script>
-    <script src="js/app.js?v=4"></script>
+    <!-- JavaScript (v7 - simultaneous multi-camera) -->
+    <script src="js/db.js?v=1215b"></script>
+    <script src="js/api.js?v=1215b"></script>
+    <script src="js/ui.js?v=1215b"></script>
+    <script src="js/app.js?v=1215b"></script>
 </body>
 </html>

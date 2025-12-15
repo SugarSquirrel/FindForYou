@@ -20,6 +20,11 @@ class ObjectFinderApp {
         // 自動偵測
         this.autoDetectInterval = null;
         this.autoDetectSeconds = 5;
+        
+        // 多攝影機支援
+        this.multiCameraStreams = {};  // { deviceId: { stream, video, canvas } }
+        this.availableCameras = [];
+        this.currentCameraDeviceId = null;
     }
 
     async init() {
@@ -99,9 +104,12 @@ class ObjectFinderApp {
         
         if (autoDetectToggle) {
             autoDetectToggle.addEventListener('change', (e) => {
+                const multiCameraSelect = document.getElementById('multiCameraSelect');
                 if (e.target.checked) {
+                    if (multiCameraSelect) multiCameraSelect.style.display = 'block';
                     this.startAutoDetection();
                 } else {
+                    if (multiCameraSelect) multiCameraSelect.style.display = 'none';
                     this.stopAutoDetection();
                 }
             });
@@ -154,11 +162,44 @@ class ObjectFinderApp {
             const devices = await navigator.mediaDevices.enumerateDevices();
             const cameras = devices.filter(d => d.kind === 'videoinput');
             
+            // 儲存攝影機列表
+            this.availableCameras = cameras;
+            
+            // 取得攝影機設定
+            const cameraSettings = this.getCameraSettings();
+            
             const select = document.getElementById('cameraSelect');
             if (select) {
-                select.innerHTML = cameras.map((cam, idx) => 
-                    `<option value="${cam.deviceId}">${cam.label || `攝影機 ${idx}`}</option>`
-                ).join('');
+                select.innerHTML = cameras.map((cam, idx) => {
+                    const selected = cameraSettings.defaultCamera === cam.deviceId ? 'selected' : '';
+                    const location = cameraSettings.locations[cam.deviceId];
+                    const label = location ? `${cam.label || `攝影機 ${idx}`} (${location})` : (cam.label || `攝影機 ${idx}`);
+                    return `<option value="${cam.deviceId}" ${selected}>${label}</option>`;
+                }).join('');
+                
+                // 儲存當前選中的攝影機
+                this.currentCameraDeviceId = select.value;
+                
+                // 監聽切換
+                select.addEventListener('change', () => {
+                    this.currentCameraDeviceId = select.value;
+                });
+            }
+            
+            // 填充多攝影機選擇 checkbox 列表
+            const checkboxList = document.getElementById('cameraCheckboxList');
+            if (checkboxList) {
+                checkboxList.innerHTML = cameras.map((cam, idx) => {
+                    const location = cameraSettings.locations[cam.deviceId];
+                    const label = location || cam.label || `攝影機 ${idx + 1}`;
+                    return `
+                        <label style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.1); padding:8px 12px; border-radius:8px; cursor:pointer;">
+                            <input type="checkbox" class="camera-checkbox" value="${cam.deviceId}" checked 
+                                style="width:18px; height:18px; accent-color:#667eea;">
+                            <span style="color:#fff; font-size:13px;">${label}</span>
+                        </label>
+                    `;
+                }).join('');
             }
             
             console.log(`📹 發現 ${cameras.length} 個攝影機`);
@@ -166,6 +207,21 @@ class ObjectFinderApp {
         } catch (error) {
             console.warn('無法列舉攝影機:', error);
         }
+    }
+    
+    getCameraSettings() {
+        try {
+            const saved = localStorage.getItem('cameraSettings');
+            return saved ? JSON.parse(saved) : { defaultCamera: '', locations: {} };
+        } catch {
+            return { defaultCamera: '', locations: {} };
+        }
+    }
+    
+    getCameraLocation() {
+        const settings = this.getCameraSettings();
+        const deviceId = this.currentCameraDeviceId || '';
+        return settings.locations[deviceId] || '攝影機';
     }
 
     async toggleCamera() {
@@ -293,12 +349,15 @@ class ObjectFinderApp {
                     console.log('📷 image_base64 長度:', result.image_base64?.length || 0);
                     
                     for (const det of deduped) {
+                        const cameraLocation = this.getCameraLocation();
+                        console.log(`📍 位置: ${cameraLocation}, 攝影機ID: ${this.currentCameraDeviceId}`);
+                        
                         await this.db.saveDetection({
                             objectClass: det.object_class,
                             objectClassZh: det.object_class_zh || det.matched_object_name_zh,
                             confidence: det.similarity || det.confidence,
                             bbox: det.bbox,
-                            surface: det.surface || '攝影機',
+                            surface: cameraLocation,
                             region: det.region || '',
                             timestamp: det.timestamp || Date.now(),
                             matchedObjectId: det.matched_object_id,
@@ -356,24 +415,230 @@ class ObjectFinderApp {
     // ========================================
     // 自動偵測
     // ========================================
+    
+    // 多攝影機輪流偵測索引
+    currentCameraIndex = 0;
+    
+    getSelectedCameras() {
+        const checkboxes = document.querySelectorAll('.camera-checkbox:checked');
+        return Array.from(checkboxes).map(cb => cb.value);
+    }
 
-    startAutoDetection() {
-        if (!this.videoStream) {
-            this.ui.showToast('請先開啟攝影機', 'warning');
+    async startAutoDetection() {
+        const selectedCameras = this.getSelectedCameras();
+        
+        if (selectedCameras.length === 0) {
+            this.ui.showToast('請至少選擇一個攝影機', 'warning');
             document.getElementById('autoDetectToggle').checked = false;
             return;
         }
         
         this.stopAutoDetection();
         
-        this.autoDetectInterval = setInterval(() => {
-            if (!this.isDetecting && this.videoStream) {
-                this.detectCurrentFrame();
-            }
-        }, this.autoDetectSeconds * 1000);
+        // 同時開啟所有選中的攝影機
+        await this.openMultipleCameras(selectedCameras);
         
-        this.ui.showToast(`自動偵測已啟動 (${this.autoDetectSeconds}秒)`, 'success');
-        console.log(`⏱️ 自動偵測已啟動，間隔 ${this.autoDetectSeconds} 秒`);
+        // 設定定時器：每次同時擷取所有攝影機
+        const runSimultaneousDetection = async () => {
+            if (!this.autoDetectInterval) return;
+            if (this.isDetecting) return;
+            
+            this.isDetecting = true;
+            
+            try {
+                await this.detectAllCameras();
+            } catch (error) {
+                console.error('多攝影機偵測失敗:', error);
+            } finally {
+                this.isDetecting = false;
+            }
+        };
+        
+        // 立即執行一次
+        await runSimultaneousDetection();
+        
+        // 設定定時器
+        this.autoDetectInterval = setInterval(runSimultaneousDetection, this.autoDetectSeconds * 1000);
+        
+        this.ui.showToast(`同時偵測 ${selectedCameras.length} 個攝影機 (${this.autoDetectSeconds}秒)`, 'success');
+        console.log(`⏱️ 同時多攝影機偵測已啟動，${selectedCameras.length} 個攝影機，間隔 ${this.autoDetectSeconds} 秒`);
+    }
+    
+    async openMultipleCameras(deviceIds) {
+        // 關閉現有的多攝影機串流
+        this.closeMultipleCameras();
+        
+        // 隱藏多攝影機選擇區的 checkbox 部分，改顯示預覽格
+        const checkboxList = document.getElementById('cameraCheckboxList');
+        const container = document.getElementById('multiCameraSelect');
+        
+        // 建立預覽格容器
+        let previewGrid = document.getElementById('multiCameraPreviewGrid');
+        if (!previewGrid) {
+            previewGrid = document.createElement('div');
+            previewGrid.id = 'multiCameraPreviewGrid';
+            previewGrid.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin-top:15px;';
+            container.appendChild(previewGrid);
+        }
+        
+        previewGrid.innerHTML = '';
+        
+        const cameraSettings = this.getCameraSettings();
+        
+        for (const deviceId of deviceIds) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: { exact: deviceId } },
+                    audio: false
+                });
+                
+                // 建立 video 元素
+                const video = document.createElement('video');
+                video.autoplay = true;
+                video.playsInline = true;
+                video.muted = true;
+                video.srcObject = stream;
+                video.style.cssText = 'width:100%; border-radius:8px; background:#000;';
+                
+                // 建立 canvas 用於擷取
+                const canvas = document.createElement('canvas');
+                
+                // 取得位置名稱
+                const location = cameraSettings.locations[deviceId] || '攝影機';
+                
+                // 建立預覽卡片
+                const previewCard = document.createElement('div');
+                previewCard.style.cssText = 'background:rgba(0,0,0,0.3); border-radius:12px; padding:8px; text-align:center;';
+                previewCard.innerHTML = `<div style="margin-bottom:5px; color:#aaa; font-size:12px;">📹 ${location}</div>`;
+                previewCard.appendChild(video);
+                previewGrid.appendChild(previewCard);
+                
+                // 儲存串流資訊
+                this.multiCameraStreams[deviceId] = { stream, video, canvas, location };
+                
+                console.log(`📹 已開啟攝影機: ${location}`);
+                
+            } catch (error) {
+                console.error(`無法開啟攝影機 ${deviceId}:`, error);
+            }
+        }
+        
+        console.log(`📹 已開啟 ${Object.keys(this.multiCameraStreams).length} 個攝影機`);
+    }
+    
+    closeMultipleCameras() {
+        for (const [deviceId, cam] of Object.entries(this.multiCameraStreams)) {
+            if (cam.stream) {
+                cam.stream.getTracks().forEach(track => track.stop());
+            }
+        }
+        this.multiCameraStreams = {};
+        
+        // 清除預覽格
+        const previewGrid = document.getElementById('multiCameraPreviewGrid');
+        if (previewGrid) previewGrid.innerHTML = '';
+    }
+    
+    async detectAllCameras() {
+        const cameras = Object.entries(this.multiCameraStreams);
+        if (cameras.length === 0) return;
+        
+        // 同時擷取所有攝影機畫面並發送偵測
+        const detectionPromises = cameras.map(async ([deviceId, cam]) => {
+            try {
+                // 等待 video 準備好
+                if (cam.video.readyState < 2) {
+                    await new Promise(resolve => {
+                        cam.video.onloadeddata = resolve;
+                    });
+                }
+                
+                // 設定 canvas 尺寸
+                cam.canvas.width = cam.video.videoWidth;
+                cam.canvas.height = cam.video.videoHeight;
+                
+                // 擷取畫面
+                const ctx = cam.canvas.getContext('2d');
+                ctx.drawImage(cam.video, 0, 0);
+                
+                // 轉換為 blob
+                const blob = await new Promise(resolve => {
+                    cam.canvas.toBlob(resolve, 'image/jpeg', 0.9);
+                });
+                
+                if (!blob) return;
+                
+                // 發送到後端偵測
+                const result = await this.api.detectImage(blob);
+                
+                if (result && result.success && result.detections && result.detections.length > 0) {
+                    const deduped = this.deduplicateDetections(result.detections);
+                    
+                    console.log(`📍 ${cam.location}: 偵測到 ${deduped.length} 個物品`);
+                    
+                    for (const det of deduped) {
+                        await this.db.saveDetection({
+                            objectClass: det.object_class,
+                            objectClassZh: det.object_class_zh || det.matched_object_name_zh,
+                            confidence: det.similarity || det.confidence,
+                            bbox: det.bbox,
+                            surface: cam.location,  // 使用此攝影機的位置
+                            region: det.region || '',
+                            timestamp: det.timestamp || Date.now(),
+                            matchedObjectId: det.matched_object_id,
+                            matchedObjectName: det.matched_object_name_zh,
+                            imagePath: result.image_base64,
+                            imageOriginal: result.image_original_base64
+                        });
+                    }
+                }
+                
+            } catch (error) {
+                console.error(`攝影機 ${cam.location} 偵測失敗:`, error);
+            }
+        });
+        
+        // 等待所有偵測完成
+        await Promise.all(detectionPromises);
+        
+        // 更新最近偵測列表
+        await this.loadRecentDetections();
+    }
+    
+    async switchToCamera(deviceId) {
+        // 儲存當前攝影機 ID
+        this.currentCameraDeviceId = deviceId;
+        
+        // 更新下拉選單顯示
+        const select = document.getElementById('cameraSelect');
+        if (select) select.value = deviceId;
+        
+        // 如果攝影機已開啟，切換到新攝影機
+        if (this.videoStream) {
+            // 停止舊的串流
+            this.videoStream.getTracks().forEach(track => track.stop());
+            
+            // 開啟新攝影機
+            const constraints = {
+                video: { deviceId: { exact: deviceId } },
+                audio: false
+            };
+            
+            this.videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+            this.videoElement.srcObject = this.videoStream;
+            
+            // 等待 video 載入
+            await new Promise((resolve) => {
+                this.videoElement.onloadedmetadata = resolve;
+            });
+            
+            // 更新 canvas 尺寸
+            this.canvasElement.width = this.videoElement.videoWidth;
+            this.canvasElement.height = this.videoElement.videoHeight;
+        } else {
+            // 如果攝影機未開啟，開啟它
+            await this.toggleCamera();
+        }
     }
 
     stopAutoDetection() {
@@ -382,6 +647,9 @@ class ObjectFinderApp {
             this.autoDetectInterval = null;
             console.log('⏹️ 自動偵測已停止');
         }
+        
+        // 關閉多攝影機
+        this.closeMultipleCameras();
     }
 
     // ========================================
