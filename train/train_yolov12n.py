@@ -1,6 +1,6 @@
 """
-YOLOv12m Training Script for Fine-tuning on findyou_yolo_clean dataset
-High-resolution training with 1024px input size
+YOLOv12n Training Script for Fine-tuning on findyou_yolo_clean dataset
+Lightweight 640px configuration for faster experiments
 """
 from ultralytics import YOLO
 from pathlib import Path
@@ -21,35 +21,35 @@ def main():
     
     print(f"Loading dataset from: {data_yaml}")
     
-    # 初始化 YOLOv12m 模型 (medium 版本，更高精度)
+    # 初始化 YOLOv12 模型
     # 使用預訓練權重進行 fine-tuning
     try:
-        model = YOLO("yolo12m.pt")  # medium 版本，平衡效能與精度
-        print("Successfully loaded YOLOv12 medium model")
+        model = YOLO("yolo12n.pt")  # nano 版本，較輕量
+        print("Successfully loaded YOLOv12 nano model")
     except Exception as e:
-        print(f"Error loading YOLOv12m model: {e}")
+        print(f"Error loading YOLOv12 model: {e}")
         print("Trying alternative model initialization...")
-        # 如果 yolo12m 不可用，嘗試使用最新的 yolo11m
+        # 如果 yolo12 不可用，嘗試使用最新的 yolo11
         try:
-            model = YOLO("yolo11m.pt")
-            print("Using YOLOv11 medium model instead")
+            model = YOLO("yolo11n.pt")
+            print("Using YOLOv11 nano model instead")
         except:
-            # 最後備選使用 yolov8m
-            model = YOLO("yolov8m.pt")
-            print("Using YOLOv8 medium model instead")
+            # 最後備選使用 yolov8
+            model = YOLO("yolov8n.pt")
+            print("Using YOLOv8 nano model instead")
     
-    # 訓練參數 - 高解析度配置
+    # 訓練參數
     training_args = {
         "data": str(data_yaml),
         "epochs": 100,               # 訓練輪數
-        "imgsz": 1024,               # 輸入影像大小 - 提升到 1024 (平衡記憶體與精度)
-        "batch": 8,                  # batch size - 降低以適應 GPU 記憶體
+        "imgsz": 640,                # 輸入影像大小
+        "batch": 64,                 # batch size (根據 GPU 記憶體調整)
         "patience": 50,              # early stopping patience
         "save": True,                # 儲存檢查點
-        "device": 0,                 # GPU 設備 (0 表示第一個 GPU)
+        "device": 0,                 # GPU 設備 (0 表示第一個 GPU，若無 GPU 會自動使用 CPU)
         "workers": 8,                # 資料載入的工作執行緒數
         "project": str(runs_root),  # 專案目錄 (寫到 FindForYou/runs)
-        "name": "findyou_yolov12m_640",   # 實驗名稱
+        "name": "findyou_yolov12n",   # 實驗名稱
         "exist_ok": True,            # 允許覆蓋現有實驗
         "pretrained": True,          # 使用預訓練權重
         "optimizer": "auto",         # 優化器 (auto, SGD, Adam, AdamW, etc.)
@@ -83,18 +83,16 @@ def main():
         "mask_ratio": 4,             # mask downsample ratio (segment train)
         "dropout": 0.0,              # 使用 dropout regularization (僅分類訓練)
         "val": True,                 # 訓練時進行驗證
-        "cache": False,              # 快取影像到記憶體 (設為 False 以節省記憶體)
     }
     
     print("\n" + "="*50)
-    print("Starting YOLOv12m High-Resolution Training")
+    print("Starting YOLOv12 Training")
     print("="*50)
-    print(f"Model: YOLOv12 Medium")
     print(f"Dataset: {data_yaml}")
     print(f"Epochs: {training_args['epochs']}")
-    print(f"Image Size: {training_args['imgsz']}x{training_args['imgsz']}")
+    print(f"Image Size: {training_args['imgsz']}")
     print(f"Batch Size: {training_args['batch']}")
-    print(f"Device: GPU {training_args['device']}")
+    print(f"Device: {training_args['device']}")
     print("="*50 + "\n")
     
     # 開始訓練
@@ -113,7 +111,7 @@ def main():
         print(f"mAP50-95: {metrics.box.map:.4f}")
         
         # 儲存最終模型
-        save_path = runs_root / "findyou_yolov12m_640" / "weights" / "best.pt"
+        save_path = runs_root / "findyou_yolov12n" / "weights" / "best.pt"
         print(f"\nBest model saved to: {save_path}")
         
         return results
