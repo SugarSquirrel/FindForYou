@@ -96,3 +96,11 @@ node_modules/
 *.temp
 tmp/
 temp/
+
+# Startup scripts (local use only)
+start.bat
+start.ps1
+
+# User data (auto-generated)
+backend/registered_objects.json
+backend/object_images/
