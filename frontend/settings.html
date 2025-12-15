@@ -352,33 +352,76 @@
             modal.className = 'modal';
             modal.id = 'registerModal';
             modal.innerHTML = `
-                <div class="modal-content">
+                <div class="modal-content" style="max-width:600px;">
                     <h3>📦 註冊新物品</h3>
                     
-                    <div class="form-group">
-                        <label>物品照片</label>
-                        <div class="upload-area" id="uploadArea" onclick="document.getElementById('imageInput').click()">
-                            <div class="placeholder">
-                                <div class="icon">📷</div>
-                                <div>點擊上傳照片</div>
+                    <!-- Step 1: 選擇圖片來源 -->
+                    <div id="step1">
+                        <p style="color:#aaa; margin-bottom:20px;">請上傳物品照片或使用攝影機拍照</p>
+                        
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
+                            <div class="upload-area" id="uploadArea" onclick="document.getElementById('imageInput').click()" style="height:150px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                                <div style="font-size:48px;">📁</div>
+                                <div style="color:#aaa;">選擇檔案</div>
+                            </div>
+                            <div class="upload-area" id="cameraArea" onclick="startCameraCapture()" style="height:150px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                                <div style="font-size:48px;">📷</div>
+                                <div style="color:#aaa;">使用攝影機</div>
                             </div>
                         </div>
-                        <input type="file" id="imageInput" accept="image/*" style="display:none" onchange="previewImage(this)">
+                        
+                        <input type="file" id="imageInput" accept="image/*" style="display:none" onchange="onImageSelected(this)">
+                        
+                        <!-- 攝影機預覽 (隱藏直到啟用) -->
+                        <div id="cameraPreview" style="display:none; margin-bottom:20px;">
+                            <video id="cameraVideo" autoplay playsinline muted style="width:100%; max-height:300px; border-radius:12px; background:#000;"></video>
+                            <div style="display:flex; gap:10px; margin-top:10px;">
+                                <button class="btn btn-primary" style="flex:1;" onclick="capturePhoto()">📸 拍照</button>
+                                <button class="btn btn-secondary" onclick="stopCameraCapture()">取消</button>
+                            </div>
+                        </div>
+                        
+                        <div class="btn-group">
+                            <button class="btn btn-secondary" onclick="closeModal('registerModal')">取消</button>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label>物品名稱 (英文 ID)</label>
-                        <input type="text" id="regName" placeholder="例如: my_wallet">
+                    <!-- Step 2: 偵測結果 -->
+                    <div id="step2" style="display:none;">
+                        <p style="color:#aaa; margin-bottom:15px;">正在偵測中...</p>
+                        <div id="detectionPreview" style="text-align:center; margin-bottom:20px;">
+                            <img id="detectedImage" style="max-width:100%; max-height:250px; border-radius:12px;">
+                        </div>
+                        <div id="detectionResults" style="margin-bottom:20px;"></div>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary" onclick="backToStep1()">← 重新選擇</button>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label>中文名稱</label>
-                        <input type="text" id="regNameZh" placeholder="例如: 我的錢包">
-                    </div>
-                    
-                    <div class="btn-group">
-                        <button class="btn btn-secondary" onclick="closeModal('registerModal')">取消</button>
-                        <button class="btn btn-primary" onclick="registerObject()">註冊</button>
+                    <!-- Step 3: 確認註冊 -->
+                    <div id="step3" style="display:none;">
+                        <div id="selectedObjectPreview" style="text-align:center; margin-bottom:20px;">
+                            <img id="selectedCropImage" style="max-width:200px; max-height:150px; border-radius:12px; border:2px solid #38ef7d;">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>物品名稱 (英文 ID)</label>
+                            <input type="text" id="regName" placeholder="例如: my_wallet">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>中文名稱</label>
+                            <input type="text" id="regNameZh" placeholder="例如: 我的錢包">
+                        </div>
+                        
+                        <div id="matchInfo" style="display:none; background:rgba(56,239,125,0.1); padding:12px; border-radius:8px; margin-bottom:16px;">
+                            <span style="color:#38ef7d;">✅ 此物品已註冊，將更新現有記錄</span>
+                        </div>
+                        
+                        <div class="btn-group">
+                            <button class="btn btn-secondary" onclick="backToStep2()">← 返回</button>
+                            <button class="btn btn-primary" id="confirmRegBtn" onclick="confirmRegistration()">確認註冊</button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -390,56 +433,240 @@
             document.body.appendChild(modal);
         }
         
-        function previewImage(input) {
-            if (input.files && input.files[0]) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const area = document.getElementById('uploadArea');
-                    area.classList.add('has-image');
-                    area.innerHTML = `<img src="${e.target.result}" alt="預覽">`;
-                };
-                reader.readAsDataURL(input.files[0]);
+        // 攝影機相關變數
+        let cameraStream = null;
+        let pendingImageData = null;
+        let pendingDetections = null;
+        let selectedDetection = null;
+        
+        async function startCameraCapture() {
+            try {
+                document.getElementById('uploadArea').style.display = 'none';
+                document.getElementById('cameraArea').style.display = 'none';
+                document.getElementById('cameraPreview').style.display = 'block';
+                
+                cameraStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' },
+                    audio: false
+                });
+                
+                const video = document.getElementById('cameraVideo');
+                video.srcObject = cameraStream;
+                
+            } catch (e) {
+                console.error('無法開啟攝影機:', e);
+                showToast('無法開啟攝影機');
+                stopCameraCapture();
             }
         }
         
-        async function registerObject() {
-            const imageInput = document.getElementById('imageInput');
-            const name = document.getElementById('regName').value.trim();
-            const nameZh = document.getElementById('regNameZh').value.trim();
-            
-            if (!imageInput.files || !imageInput.files[0]) {
-                showToast('請選擇照片');
-                return;
+        function stopCameraCapture() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
             }
-            if (!name || !nameZh) {
-                showToast('請填寫完整資訊');
-                return;
+            document.getElementById('cameraVideo').srcObject = null;
+            document.getElementById('cameraPreview').style.display = 'none';
+            document.getElementById('uploadArea').style.display = 'flex';
+            document.getElementById('cameraArea').style.display = 'flex';
+        }
+        
+        function capturePhoto() {
+            const video = document.getElementById('cameraVideo');
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            
+            canvas.toBlob(async (blob) => {
+                stopCameraCapture();
+                await processImage(blob);
+            }, 'image/jpeg', 0.9);
+        }
+        
+        async function onImageSelected(input) {
+            if (input.files && input.files[0]) {
+                await processImage(input.files[0]);
             }
+        }
+        
+        async function processImage(blob) {
+            // 顯示 Step 2
+            document.getElementById('step1').style.display = 'none';
+            document.getElementById('step2').style.display = 'block';
             
-            const formData = new FormData();
-            formData.append('image', imageInput.files[0]);
-            formData.append('name', name);
-            formData.append('name_zh', nameZh);
+            // 預覽圖片
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById('detectedImage').src = e.target.result;
+                pendingImageData = e.target.result;
+            };
+            reader.readAsDataURL(blob);
             
+            // 呼叫偵測 API
             try {
-                showToast('註冊中...');
-                const res = await fetch(`${API_BASE}/api/objects/register`, {
+                const formData = new FormData();
+                formData.append('file', blob, 'capture.jpg');
+                
+                const res = await fetch(`${API_BASE}/api/detect/image`, {
                     method: 'POST',
                     body: formData
                 });
                 const data = await res.json();
                 
+                if (data.success && data.detections && data.detections.length > 0) {
+                    pendingDetections = data.detections;
+                    // 儲存原始圖片用於註冊
+                    pendingImageData = data.image_original_base64 || data.image_base64;
+                    // 顯示帶標註的圖片
+                    document.getElementById('detectedImage').src = data.image_base64;
+                    showDetectionResults(data.detections);
+                } else {
+                    document.getElementById('detectionResults').innerHTML = `
+                        <div style="text-align:center; padding:20px; color:#888;">
+                            <div style="font-size:48px; margin-bottom:10px;">🤔</div>
+                            <p>未偵測到物品</p>
+                            <p style="font-size:12px;">請嘗試其他角度或更清晰的照片</p>
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                console.error('偵測失敗:', e);
+                document.getElementById('detectionResults').innerHTML = `
+                    <div style="text-align:center; padding:20px; color:#f5576c;">
+                        <p>偵測失敗</p>
+                        <p style="font-size:12px;">${e.message}</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function showDetectionResults(detections) {
+            const container = document.getElementById('detectionResults');
+            
+            container.innerHTML = `
+                <p style="color:#fff; margin-bottom:12px;">偵測到 ${detections.length} 個物品，請選擇要註冊的物品：</p>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                    ${detections.map((det, idx) => {
+                        const isMatched = det.matched_object_id;
+                        const matchBadge = isMatched 
+                            ? `<span style="background:rgba(56,239,125,0.2); color:#38ef7d; padding:2px 8px; border-radius:10px; font-size:11px;">✅ 已註冊</span>`
+                            : `<span style="background:rgba(102,126,234,0.2); color:#667eea; padding:2px 8px; border-radius:10px; font-size:11px;">➕ 新物件</span>`;
+                        const actionText = isMatched ? '更新' : '註冊';
+                        
+                        return `
+                            <div onclick="selectDetection(${idx})" style="
+                                display:flex; align-items:center; justify-content:space-between;
+                                background:rgba(255,255,255,0.05); padding:12px 16px; border-radius:10px;
+                                cursor:pointer; transition:all 0.2s;
+                            " onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                                <div style="display:flex; align-items:center; gap:12px;">
+                                    <span style="font-size:24px;">📦</span>
+                                    <div>
+                                        <div style="font-weight:500;">${det.object_class_zh || det.object_class}</div>
+                                        <div style="font-size:12px; color:#888;">信心度: ${Math.round((det.similarity || det.confidence) * 100)}%</div>
+                                    </div>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    ${matchBadge}
+                                    <button class="btn btn-primary" style="padding:6px 12px; font-size:12px;">${actionText}</button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+        
+        function selectDetection(idx) {
+            selectedDetection = pendingDetections[idx];
+            
+            // 顯示 Step 3
+            document.getElementById('step2').style.display = 'none';
+            document.getElementById('step3').style.display = 'block';
+            
+            // 顯示預覽圖
+            document.getElementById('selectedCropImage').src = pendingImageData;
+            
+            // 預填名稱
+            const isMatched = selectedDetection.matched_object_id;
+            if (isMatched) {
+                document.getElementById('regName').value = selectedDetection.matched_object_name || selectedDetection.object_class;
+                document.getElementById('regNameZh').value = selectedDetection.matched_object_name_zh || selectedDetection.object_class_zh;
+                document.getElementById('matchInfo').style.display = 'block';
+                document.getElementById('confirmRegBtn').textContent = '更新物品';
+            } else {
+                document.getElementById('regName').value = (selectedDetection.object_class || '').replace(/\s+/g, '_');
+                document.getElementById('regNameZh').value = selectedDetection.object_class_zh || '';
+                document.getElementById('matchInfo').style.display = 'none';
+                document.getElementById('confirmRegBtn').textContent = '確認註冊';
+            }
+        }
+        
+        function backToStep1() {
+            stopCameraCapture();
+            document.getElementById('step2').style.display = 'none';
+            document.getElementById('step1').style.display = 'block';
+            document.getElementById('uploadArea').style.display = 'flex';
+            document.getElementById('cameraArea').style.display = 'flex';
+            pendingDetections = null;
+            pendingImageData = null;
+        }
+        
+        function backToStep2() {
+            document.getElementById('step3').style.display = 'none';
+            document.getElementById('step2').style.display = 'block';
+            selectedDetection = null;
+        }
+        
+        async function confirmRegistration() {
+            const name = document.getElementById('regName').value.trim();
+            const nameZh = document.getElementById('regNameZh').value.trim();
+            
+            if (!name || !nameZh) {
+                showToast('請填寫完整資訊');
+                return;
+            }
+            
+            const isUpdate = selectedDetection && selectedDetection.matched_object_id;
+            
+            try {
+                showToast(isUpdate ? '更新中...' : '註冊中...');
+                
+                // 使用 register-cropped API
+                const response = await fetch(`${API_BASE}/api/objects/register-cropped`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image_base64: pendingImageData,
+                        bbox: selectedDetection?.bbox || [0, 0, 100, 100],
+                        name: name,
+                        name_zh: nameZh
+                    })
+                });
+                
+                const data = await response.json();
+                
                 if (data.success) {
-                    showToast(`已註冊: ${nameZh}`);
+                    showToast(isUpdate ? `已更新: ${nameZh}` : `已註冊: ${nameZh}`);
                     closeModal('registerModal');
                     loadObjects();
                 } else {
-                    showToast(data.detail || '註冊失敗');
+                    showToast(data.detail || '操作失敗');
                 }
             } catch (e) {
-                console.error('註冊失敗', e);
-                showToast('註冊失敗');
+                console.error('操作失敗:', e);
+                showToast('操作失敗');
             }
+        }
+        
+        function previewImage(input) {
+            // 保留舊版相容性
+            onImageSelected(input);
+        }
+        
+        async function registerObject() {
+            // 舊版 API，保留相容
         }
         
         async function showObjectDetail(objId) {
@@ -488,7 +715,7 @@
                             <button class="btn btn-danger" onclick="deleteObject('${obj.id}')">刪除物品</button>
                             <div style="display:flex; gap:8px;">
                                 <button class="btn btn-secondary" onclick="closeModal('detailModal')">關閉</button>
-                                <button class="btn btn-primary" onclick="addMorePhotos('${obj.id}')">新增照片</button>
+                                <button class="btn btn-primary" onclick="addMorePhotos('${obj.id}', '${obj.name}', '${obj.name_zh}')">新增照片</button>
                             </div>
                         </div>
                     </div>
@@ -505,29 +732,65 @@
             }
         }
         
-        function addMorePhotos(objId) {
+        // 新增照片用的全域變數
+        let addPhotoObjId = null;
+        let addPhotoCameraStream = null;
+        let addPhotoPendingImageData = null;
+        let addPhotoPendingDetections = null;
+        let addPhotoSelectedBbox = null;
+        
+        function addMorePhotos(objId, objName, objNameZh) {
             closeModal('detailModal');
+            addPhotoObjId = objId;
             
             const modal = document.createElement('div');
             modal.className = 'modal';
             modal.id = 'addPhotoModal';
             modal.innerHTML = `
-                <div class="modal-content">
-                    <h3>📷 新增照片</h3>
+                <div class="modal-content" style="max-width:600px;">
+                    <h3>📷 新增照片 - ${objNameZh || objId}</h3>
                     
-                    <div class="form-group">
-                        <div class="upload-area" id="uploadAreaAdd" onclick="document.getElementById('imageInputAdd').click()">
-                            <div class="placeholder">
-                                <div class="icon">📷</div>
-                                <div>點擊上傳照片</div>
+                    <!-- Step 1: 選擇圖片來源 -->
+                    <div id="addPhotoStep1">
+                        <p style="color:#aaa; margin-bottom:20px;">請上傳物品照片或使用攝影機拍照</p>
+                        
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
+                            <div class="upload-area" id="uploadAreaAdd" onclick="document.getElementById('imageInputAdd').click()" style="height:150px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                                <div style="font-size:48px;">📁</div>
+                                <div style="color:#aaa;">選擇檔案</div>
+                            </div>
+                            <div class="upload-area" id="cameraAreaAdd" onclick="startAddPhotoCamera()" style="height:150px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                                <div style="font-size:48px;">📷</div>
+                                <div style="color:#aaa;">使用攝影機</div>
                             </div>
                         </div>
-                        <input type="file" id="imageInputAdd" accept="image/*" style="display:none" onchange="previewImageAdd(this)">
+                        
+                        <input type="file" id="imageInputAdd" accept="image/*" style="display:none" onchange="onAddPhotoImageSelected(this)">
+                        
+                        <!-- 攝影機預覽 -->
+                        <div id="cameraPreviewAdd" style="display:none; margin-bottom:20px;">
+                            <video id="cameraVideoAdd" autoplay playsinline muted style="width:100%; max-height:300px; border-radius:12px; background:#000;"></video>
+                            <div style="display:flex; gap:10px; margin-top:10px;">
+                                <button class="btn btn-primary" style="flex:1;" onclick="captureAddPhoto()">📸 拍照</button>
+                                <button class="btn btn-secondary" onclick="stopAddPhotoCamera()">取消</button>
+                            </div>
+                        </div>
+                        
+                        <div class="btn-group">
+                            <button class="btn btn-secondary" onclick="closeModal('addPhotoModal')">取消</button>
+                        </div>
                     </div>
                     
-                    <div class="btn-group">
-                        <button class="btn btn-secondary" onclick="closeModal('addPhotoModal')">取消</button>
-                        <button class="btn btn-primary" onclick="uploadMorePhoto('${objId}')">上傳</button>
+                    <!-- Step 2: 偵測結果 -->
+                    <div id="addPhotoStep2" style="display:none;">
+                        <p style="color:#aaa; margin-bottom:15px;">請選擇要新增的物件：</p>
+                        <div id="addPhotoDetectionPreview" style="text-align:center; margin-bottom:20px;">
+                            <img id="addPhotoDetectedImage" style="max-width:100%; max-height:250px; border-radius:12px;">
+                        </div>
+                        <div id="addPhotoDetectionResults" style="margin-bottom:20px;"></div>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary" onclick="backToAddPhotoStep1()">← 重新選擇</button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -539,36 +802,152 @@
             document.body.appendChild(modal);
         }
         
-        function previewImageAdd(input) {
-            if (input.files && input.files[0]) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const area = document.getElementById('uploadAreaAdd');
-                    area.classList.add('has-image');
-                    area.innerHTML = `<img src="${e.target.result}" alt="預覽">`;
-                };
-                reader.readAsDataURL(input.files[0]);
+        async function startAddPhotoCamera() {
+            try {
+                document.getElementById('uploadAreaAdd').style.display = 'none';
+                document.getElementById('cameraAreaAdd').style.display = 'none';
+                document.getElementById('cameraPreviewAdd').style.display = 'block';
+                
+                addPhotoCameraStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' },
+                    audio: false
+                });
+                
+                document.getElementById('cameraVideoAdd').srcObject = addPhotoCameraStream;
+                
+            } catch (e) {
+                console.error('無法開啟攝影機:', e);
+                showToast('無法開啟攝影機');
+                stopAddPhotoCamera();
             }
         }
         
-        async function uploadMorePhoto(objId) {
-            const imageInput = document.getElementById('imageInputAdd');
-            
-            if (!imageInput.files || !imageInput.files[0]) {
-                showToast('請選擇照片');
-                return;
+        function stopAddPhotoCamera() {
+            if (addPhotoCameraStream) {
+                addPhotoCameraStream.getTracks().forEach(track => track.stop());
+                addPhotoCameraStream = null;
             }
+            const videoEl = document.getElementById('cameraVideoAdd');
+            if (videoEl) videoEl.srcObject = null;
+            const previewEl = document.getElementById('cameraPreviewAdd');
+            if (previewEl) previewEl.style.display = 'none';
+            const uploadEl = document.getElementById('uploadAreaAdd');
+            if (uploadEl) uploadEl.style.display = 'flex';
+            const cameraEl = document.getElementById('cameraAreaAdd');
+            if (cameraEl) cameraEl.style.display = 'flex';
+        }
+        
+        function captureAddPhoto() {
+            const video = document.getElementById('cameraVideoAdd');
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
             
-            const formData = new FormData();
-            formData.append('image', imageInput.files[0]);
+            canvas.toBlob(async (blob) => {
+                stopAddPhotoCamera();
+                await processAddPhotoImage(blob);
+            }, 'image/jpeg', 0.9);
+        }
+        
+        async function onAddPhotoImageSelected(input) {
+            if (input.files && input.files[0]) {
+                await processAddPhotoImage(input.files[0]);
+            }
+        }
+        
+        async function processAddPhotoImage(blob) {
+            // 顯示 Step 2
+            document.getElementById('addPhotoStep1').style.display = 'none';
+            document.getElementById('addPhotoStep2').style.display = 'block';
             
+            // 預覽圖片
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById('addPhotoDetectedImage').src = e.target.result;
+                addPhotoPendingImageData = e.target.result;
+            };
+            reader.readAsDataURL(blob);
+            
+            // 呼叫偵測 API
             try {
-                showToast('上傳中...');
-                const res = await fetch(`${API_BASE}/api/objects/${objId}/images`, {
+                const formData = new FormData();
+                formData.append('file', blob, 'capture.jpg');
+                
+                const res = await fetch(`${API_BASE}/api/detect/image`, {
                     method: 'POST',
                     body: formData
                 });
                 const data = await res.json();
+                
+                if (data.success && data.detections && data.detections.length > 0) {
+                    addPhotoPendingDetections = data.detections;
+                    addPhotoPendingImageData = data.image_original_base64 || data.image_base64;
+                    document.getElementById('addPhotoDetectedImage').src = data.image_base64;
+                    showAddPhotoDetectionResults(data.detections);
+                } else {
+                    document.getElementById('addPhotoDetectionResults').innerHTML = `
+                        <div style="text-align:center; padding:20px; color:#888;">
+                            <div style="font-size:48px; margin-bottom:10px;">🤔</div>
+                            <p>未偵測到物品</p>
+                            <p style="font-size:12px;">請嘗試其他角度或更清晰的照片</p>
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                console.error('偵測失敗:', e);
+                document.getElementById('addPhotoDetectionResults').innerHTML = `
+                    <div style="text-align:center; padding:20px; color:#f5576c;">
+                        <p>偵測失敗</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function showAddPhotoDetectionResults(detections) {
+            const container = document.getElementById('addPhotoDetectionResults');
+            
+            container.innerHTML = `
+                <p style="color:#fff; margin-bottom:12px;">偵測到 ${detections.length} 個物品，請選擇要新增的：</p>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                    ${detections.map((det, idx) => `
+                        <div onclick="selectAddPhotoDetection(${idx})" style="
+                            display:flex; align-items:center; justify-content:space-between;
+                            background:rgba(255,255,255,0.05); padding:12px 16px; border-radius:10px;
+                            cursor:pointer; transition:all 0.2s;
+                        " onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                            <div style="display:flex; align-items:center; gap:12px;">
+                                <span style="font-size:24px;">📦</span>
+                                <div>
+                                    <div style="font-weight:500;">${det.object_class_zh || det.object_class}</div>
+                                    <div style="font-size:12px; color:#888;">信心度: ${Math.round((det.similarity || det.confidence) * 100)}%</div>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary" style="padding:6px 12px; font-size:12px;">選擇此物件</button>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        async function selectAddPhotoDetection(idx) {
+            const det = addPhotoPendingDetections[idx];
+            addPhotoSelectedBbox = det.bbox;
+            
+            // 直接上傳
+            try {
+                showToast('上傳中...');
+                
+                const response = await fetch(`${API_BASE}/api/objects/${addPhotoObjId}/images-cropped`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image_base64: addPhotoPendingImageData,
+                        bbox: det.bbox || [0, 0, 100, 100]
+                    })
+                });
+                
+                const data = await response.json();
                 
                 if (data.success) {
                     showToast('照片已新增');
@@ -578,9 +957,28 @@
                     showToast(data.detail || '上傳失敗');
                 }
             } catch (e) {
-                console.error('上傳失敗', e);
+                console.error('上傳失敗:', e);
                 showToast('上傳失敗');
             }
+        }
+        
+        function backToAddPhotoStep1() {
+            stopAddPhotoCamera();
+            document.getElementById('addPhotoStep2').style.display = 'none';
+            document.getElementById('addPhotoStep1').style.display = 'block';
+            document.getElementById('uploadAreaAdd').style.display = 'flex';
+            document.getElementById('cameraAreaAdd').style.display = 'flex';
+            addPhotoPendingDetections = null;
+            addPhotoPendingImageData = null;
+        }
+        
+        // 舊版相容性函數 (保留但不使用)
+        function previewImageAdd(input) {
+            onAddPhotoImageSelected(input);
+        }
+        
+        async function uploadMorePhoto(objId) {
+            // 舊版 API，現在改用新流程
         }
         
         async function deleteObject(objId) {

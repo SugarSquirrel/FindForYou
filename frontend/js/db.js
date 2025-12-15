@@ -174,7 +174,8 @@ class ObjectFinderDB {
             surfaceZh: SURFACE_MAP[detection.surface] || detection.surface || '未知位置',
             region: detection.region || '',
             regionZh: REGION_MAP[detection.region] || detection.region || '',
-            imagePath: detection.imagePath || null,  // 儲存截圖路徑（支援 base64）
+            imagePath: detection.imagePath || null,  // 帶標註的圖片 (顯示用)
+            imageOriginal: detection.imageOriginal || null,  // 原始圖片 (註冊用)
             matchedObjectId: detection.matchedObjectId || null,
             matchedObjectName: detection.matchedObjectName || null
         };

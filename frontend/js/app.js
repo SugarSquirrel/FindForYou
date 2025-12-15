@@ -303,7 +303,8 @@ class ObjectFinderApp {
                             timestamp: det.timestamp || Date.now(),
                             matchedObjectId: det.matched_object_id,
                             matchedObjectName: det.matched_object_name_zh,
-                            imagePath: result.image_base64  // 儲存完整 base64 圖片
+                            imagePath: result.image_base64,  // 帶標註的圖片 (顯示用)
+                            imageOriginal: result.image_original_base64  // 原始圖片 (註冊用)
                         });
                     }
                     
@@ -697,7 +698,7 @@ class ObjectFinderApp {
         // 儲存當前要註冊的偵測
         this.pendingRegistration = {
             detection: detection,
-            imageBase64: detection.imagePath,
+            imageBase64: detection.imageOriginal || detection.imagePath,  // 優先使用原始圖片
             bbox: detection.bbox
         };
 
@@ -707,7 +708,7 @@ class ObjectFinderApp {
         const nameEn = document.getElementById('registerNameEn');
         const nameZh = document.getElementById('registerNameZh');
 
-        // 顯示裁切圖片
+        // 顯示帶標註的圖片 (預覽用)
         if (detection.imagePath) {
             cropImage.src = detection.imagePath;
         } else {

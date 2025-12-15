@@ -196,16 +196,28 @@ class ObjectRegistry:
         self,
         obj_id: str,
         embedding: np.ndarray,
-        image_data: bytes = None
+        image_data: bytes = None,
+        image_path: str = None
     ) -> Optional[RegisteredObject]:
-        """為物品新增特徵 (多張照片)"""
+        """
+        為物品新增特徵 (多張照片)
+        
+        Args:
+            obj_id: 物品 ID
+            embedding: 特徵向量
+            image_data: 圖片二進位資料 (可選)
+            image_path: 已存在的圖片路徑 (可選，傳入此參數時不會重新儲存圖片)
+        """
         if obj_id not in self.objects:
             return None
         
         obj = self.objects[obj_id]
         obj.embeddings.append(embedding.tolist())
         
-        if image_data:
+        # 處理圖片：優先使用已存在的路徑，否則儲存 image_data
+        if image_path and os.path.exists(image_path):
+            obj.images.append(image_path)
+        elif image_data:
             saved_path = self._save_image(obj_id, image_data)
             obj.images.append(saved_path)
         

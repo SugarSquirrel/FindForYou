@@ -47,7 +47,8 @@ class DetectionResponse(BaseModel):
     detections: List[Detection]
     timestamp: int
     message: Optional[str] = None
-    image_base64: Optional[str] = None  # 返回帶標註的圖片
+    image_base64: Optional[str] = None  # 返回帶標註的圖片 (顯示用)
+    image_original_base64: Optional[str] = None  # 原始圖片 (註冊用，無 bounding box)
 
 
 class HealthResponse(BaseModel):
@@ -325,6 +326,59 @@ async def add_object_image(obj_id: str, image: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class AddImageRequest(BaseModel):
+    """新增照片請求（JSON 格式）"""
+    image_base64: str
+    bbox: Optional[List[float]] = None
+
+
+@app.post("/api/objects/{obj_id}/images-cropped")
+async def add_object_image_cropped(obj_id: str, request: AddImageRequest):
+    """為物品新增照片（JSON with base64 格式，支援 bbox 裁切）"""
+    if detector is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    try:
+        import base64
+        
+        # 解析 base64 圖片
+        image_data = request.image_base64
+        if ',' in image_data:
+            image_data = image_data.split(',')[1]
+        
+        image_bytes = base64.b64decode(image_data)
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="無法解析圖片")
+        
+        # 如果有 bbox 就裁切
+        if request.bbox and len(request.bbox) >= 4:
+            x1, y1, x2, y2 = [int(v) for v in request.bbox[:4]]
+            h, w = img.shape[:2]
+            # 確保座標在圖片範圍內
+            x1 = max(0, min(x1, w-1))
+            y1 = max(0, min(y1, h-1))
+            x2 = max(x1+1, min(x2, w))
+            y2 = max(y1+1, min(y2, h))
+            img = img[y1:y2, x1:x2]
+        
+        result = detector.add_object_image(obj_id=obj_id, image=img)
+        
+        if result:
+            return {"success": True, "message": f"已為物品新增照片", "object": result}
+        else:
+            raise HTTPException(status_code=404, detail=f"物品 {obj_id} 不存在")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.put("/api/objects/{obj_id}")
 async def update_object(
     obj_id: str,
@@ -418,12 +472,17 @@ async def detect_image(file: UploadFile = File(...)):
         # 廣播給 WebSocket 連線
         await broadcast_detection(detections)
         
+        # 原始圖片 (無 bounding box，用於註冊)
+        _, orig_buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        orig_base64 = base64.b64encode(orig_buffer).decode('utf-8')
+        
         return DetectionResponse(
             success=True,
             detections=detections,
             timestamp=int(datetime.now().timestamp() * 1000),
             message=f"偵測完成，找到 {len(detections)} 個物品",
-            image_base64=f"data:image/jpeg;base64,{img_base64}"
+            image_base64=f"data:image/jpeg;base64,{img_base64}",
+            image_original_base64=f"data:image/jpeg;base64,{orig_base64}"
         )
         
     except HTTPException:

@@ -368,7 +368,7 @@ class ObjectDetector:
         cv2.imwrite(img_path, target_image)
         
         # 更新物品
-        updated = self.object_registry.add_embedding(obj_id, embedding, img_path)
+        updated = self.object_registry.add_embedding(obj_id, embedding, image_path=img_path)
         
         if updated:
             return {
