@@ -85,20 +85,70 @@ class ObjectDetector:
     # 允許偵測的 COCO 類別 ID (對應 LVIS 需求)
     ALLOWED_CLASS_IDS = [24, 26, 39, 41, 65, 67, 73]  # backpack, handbag, bottle, cup, remote, cell phone, book
     
+    # Tune 模型類別名稱對照表
+    TUNE_CLASS_NAMES = {
+        0: "cellular phone",
+        1: "remote control",
+        2: "backpack",
+        3: "handbag",
+        4: "book",
+        5: "bottle",
+        6: "cup",
+        7: "key",
+        8: "watch",
+        9: "earphone",
+        10: "glasses",
+        11: "notebook",
+        12: "mask"
+    }
+    
+    # Tune 模型類別中文對照表
+    TUNE_CLASS_NAMES_ZH = {
+        "cellular phone": "手機",
+        "remote control": "遙控器",
+        "backpack": "背包",
+        "handbag": "手提包",
+        "book": "書",
+        "bottle": "水瓶",
+        "cup": "杯子",
+        "key": "鑰匙",
+        "watch": "手錶",
+        "earphone": "耳機",
+        "glasses": "眼鏡",
+        "notebook": "筆記本",
+        "mask": "口罩"
+    }
+    
+    # 與基本 YOLO 重疊的 tune 類別 (這些類別如果和基本 YOLO 偵測到同一物件則不繪製)
+    # 格式: tune_class_name -> 對應的基本 YOLO class_name
+    OVERLAPPING_CLASSES = {
+        "cellular phone": "cell phone",
+        "remote control": "remote",
+        "backpack": "backpack",
+        "handbag": "handbag",
+        "book": "book",
+        "bottle": "bottle",
+        "cup": "cup"
+    }
+    
     def __init__(
         self, 
         model_path: str = "yolo12l.pt",
+        tune_model_path: str = "yolo12l_tune.pt",
         similarity_threshold: float = 0.7
     ):
         self.model_path = model_path
+        self.tune_model_path = tune_model_path
         self.similarity_threshold = similarity_threshold
         self.model = None
+        self.tune_model = None  # 微調模型
         self.feature_extractor = None
         self.object_registry = None
         self.is_ready = False
         
         # 初始化
         self._init_model()
+        self._init_tune_model()
         self._init_feature_extractor()
         self._init_registry()
     
@@ -117,6 +167,27 @@ class ObjectDetector:
         except Exception as e:
             print(f"❌ YOLO12 模型載入失敗: {e}")
             raise
+    
+    def _init_tune_model(self):
+        """初始化微調 YOLO12 模型"""
+        try:
+            import torch
+            import os
+            
+            # 檢查 tune 模型檔案是否存在
+            tune_path = os.path.join(os.path.dirname(__file__), self.tune_model_path)
+            if not os.path.exists(tune_path):
+                print(f"⚠️ 微調模型不存在: {tune_path}，跳過載入")
+                return
+            
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.tune_model = YOLO(tune_path)
+            self.tune_model.to(device)
+            print(f"✅ 微調 YOLO12 模型已載入: {self.tune_model_path}")
+            
+        except Exception as e:
+            print(f"⚠️ 微調 YOLO12 模型載入失敗: {e}")
+            # 不拋出例外，允許系統在沒有 tune 模型的情況下運行
     
     def _init_feature_extractor(self):
         """初始化 DINOv2 特徵提取器"""
@@ -142,6 +213,7 @@ class ObjectDetector:
     def detect_frame(self, frame: np.ndarray) -> List[DetectionResult]:
         """
         偵測圖片中的物品 (主要方法)
+        同時使用基本 YOLO 和微調模型進行偵測
         
         Args:
             frame: BGR 格式的 numpy 陣列
@@ -155,7 +227,7 @@ class ObjectDetector:
         results = []
         
         try:
-            # YOLO12 偵測
+            # ===== 1. 基本 YOLO12 偵測 =====
             yolo_results = self.model(frame, verbose=False)[0]
             
             for box in yolo_results.boxes:
@@ -218,6 +290,70 @@ class ObjectDetector:
                                 break
                 
                 results.append(result)
+            
+            # ===== 2. 微調模型偵測 (如果有載入) =====
+            if self.tune_model is not None:
+                tune_results = self.tune_model(frame, verbose=False)[0]
+                
+                for box in tune_results.boxes:
+                    cls_id = int(box.cls[0])
+                    conf = float(box.conf[0])
+                    bbox = box.xyxy[0].cpu().numpy().tolist()
+                    
+                    # 取得 tune 模型的類別名稱
+                    tune_class_name = self.TUNE_CLASS_NAMES.get(cls_id, f"class_{cls_id}")
+                    tune_class_name_zh = self.TUNE_CLASS_NAMES_ZH.get(tune_class_name, tune_class_name)
+                    
+                    # 🔥 完全跳過重疊類別（不管位置是否重疊）
+                    if tune_class_name in self.OVERLAPPING_CLASSES:
+                        continue
+                    
+                    # 裁切物品區域
+                    x1, y1, x2, y2 = [int(v) for v in bbox]
+                    crop = frame[y1:y2, x1:x2]
+                    
+                    if crop.size == 0:
+                        continue
+                    
+                    # 計算物品區域
+                    frame_height, frame_width = frame.shape[:2]
+                    center_x = (x1 + x2) / 2 / frame_width
+                    region = "左側" if center_x < 0.33 else "右側" if center_x > 0.67 else "中間"
+                    
+                    # 預設結果
+                    result = DetectionResult(
+                        object_class=tune_class_name,
+                        object_class_zh=tune_class_name_zh,
+                        confidence=conf,
+                        bbox=bbox,
+                        region=region,
+                        surface="偵測區域"
+                    )
+                    
+                    # DINOv2 特徵比對
+                    if len(self.object_registry.objects) > 0:
+                        crop_embedding = self.feature_extractor.extract(crop)
+                        
+                        if crop_embedding is not None:
+                            # 與已註冊物品比對
+                            for obj in self.object_registry.objects.values():
+                                if not obj.embeddings:
+                                    continue
+                                
+                                max_sim = 0
+                                for emb in obj.embeddings:
+                                    sim = self.feature_extractor.cosine_similarity(crop_embedding, emb)
+                                    max_sim = max(max_sim, sim)
+                                
+                                if max_sim >= self.similarity_threshold:
+                                    result.matched_object_id = obj.id
+                                    result.matched_object_name = obj.name
+                                    result.matched_object_name_zh = obj.name_zh
+                                    result.similarity = max_sim
+                                    result.object_class_zh = obj.name_zh
+                                    break
+                    
+                    results.append(result)
                 
         except Exception as e:
             print(f"❌ 偵測錯誤: {e}")
