@@ -98,8 +98,8 @@ tmp/
 temp/
 
 # Startup scripts (local use only)
-start.bat
-start.ps1
+*.bat
+*.ps1
 
 # User data (auto-generated)
 backend/registered_objects.json

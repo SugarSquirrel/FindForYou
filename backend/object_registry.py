@@ -108,7 +108,7 @@ class ObjectRegistry:
         註冊新物品
         
         Args:
-            name: 物品英文名稱 (作為 ID)
+            name: 物品英文名稱
             name_zh: 物品中文名稱
             embedding: 特徵向量
             image_data: 圖片二進位資料 (可選)
@@ -118,7 +118,9 @@ class ObjectRegistry:
             註冊的物品物件
         """
         now = int(datetime.now().timestamp() * 1000)
-        obj_id = name.lower().replace(" ", "_")
+        
+        # 使用 UUID 生成唯一 ID，確保每個物品都有獨立的 ID
+        obj_id = str(uuid.uuid4())
         
         # 儲存圖片
         saved_image_path = None
@@ -127,28 +129,18 @@ class ObjectRegistry:
         elif image_path and os.path.exists(image_path):
             saved_image_path = image_path
         
-        # 檢查是否已存在
-        if obj_id in self.objects:
-            # 更新現有物品
-            obj = self.objects[obj_id]
-            obj.embeddings.append(embedding.tolist())
-            if saved_image_path:
-                obj.images.append(saved_image_path)
-            obj.updated_at = now
-            print(f"📝 更新物品: {name} (共 {len(obj.embeddings)} 個特徵)")
-        else:
-            # 建立新物品
-            obj = RegisteredObject(
-                id=obj_id,
-                name=name,
-                name_zh=name_zh,
-                embeddings=[embedding.tolist()],
-                images=[saved_image_path] if saved_image_path else [],
-                created_at=now,
-                updated_at=now
-            )
-            self.objects[obj_id] = obj
-            print(f"✅ 註冊新物品: {name} ({name_zh})")
+        # 建立新物品（每次註冊都是新物品）
+        obj = RegisteredObject(
+            id=obj_id,
+            name=name,
+            name_zh=name_zh,
+            embeddings=[embedding.tolist()],
+            images=[saved_image_path] if saved_image_path else [],
+            created_at=now,
+            updated_at=now
+        )
+        self.objects[obj_id] = obj
+        print(f"✅ 註冊新物品: {name} ({name_zh}) [ID: {obj_id[:8]}...]")
         
         self._save()
         return obj
