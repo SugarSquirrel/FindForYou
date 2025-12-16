@@ -65,12 +65,40 @@ class RegisterObjectRequest(BaseModel):
     name_zh: str
 
 
+class VideoRegisterStartRequest(BaseModel):
+    """影片註冊開始請求"""
+    image_base64: str  # 初始偵測用的圖片
+    bbox: List[float]  # 選定物件的 bbox [x1, y1, x2, y2]
+
+
+class VideoRegisterFrameRequest(BaseModel):
+    """影片註冊幀請求"""
+    session_id: str
+    image_base64: str  # 當前幀的圖片
+
+
+class VideoRegisterFinishRequest(BaseModel):
+    """影片註冊完成請求"""
+    session_id: str
+    name: str
+    name_zh: str
+
+
+class VideoAddPhotosFinishRequest(BaseModel):
+    """影片新增照片完成請求 (已存在物品)"""
+    session_id: str
+    obj_id: str  # 要新增照片的物品 ID
+
+
 # ========================================
 # 全域變數
 # ========================================
 
 detector: Optional[ObjectDetector] = None
 connected_websockets: List[WebSocket] = []
+
+# 影片註冊 session 管理
+video_registration_sessions = {}
 
 
 # ========================================
@@ -416,8 +444,308 @@ async def delete_object(obj_id: str):
 
 
 # ========================================
-# 偵測 API (主要推論入口)
+# 影片模式註冊 API
 # ========================================
+
+@app.post("/api/objects/register-video-start")
+async def register_video_start(request: VideoRegisterStartRequest):
+    """
+    開始影片註冊 session
+    接收初始圖片和選定的 bbox，建立 session
+    """
+    if detector is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    try:
+        import base64
+        import uuid
+        
+        # 解析圖片
+        image_data = request.image_base64
+        if ',' in image_data:
+            image_data = image_data.split(',')[1]
+        
+        img_bytes = base64.b64decode(image_data)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="無法解析圖片")
+        
+        # 驗證 bbox
+        x1, y1, x2, y2 = [int(v) for v in request.bbox]
+        h, w = img.shape[:2]
+        x1 = max(0, min(x1, w-1))
+        y1 = max(0, min(y1, h-1))
+        x2 = max(x1+1, min(x2, w))
+        y2 = max(y1+1, min(y2, h))
+        
+        # 裁切第一幀並提取特徵
+        cropped = img[y1:y2, x1:x2]
+        if cropped.size == 0:
+            raise HTTPException(status_code=400, detail="裁切區域無效")
+        
+        embedding = detector.feature_extractor.extract(cropped)
+        
+        # 儲存第一張圖片
+        img_dir = os.path.join(os.path.dirname(__file__), "object_images")
+        os.makedirs(img_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        img_name = f"video_reg_{timestamp}_0.jpg"
+        img_path = os.path.join(img_dir, img_name)
+        cv2.imwrite(img_path, cropped)
+        
+        # 建立 session
+        session_id = str(uuid.uuid4())
+        video_registration_sessions[session_id] = {
+            "bbox": [x1, y1, x2, y2],
+            "embeddings": [embedding.tolist()],
+            "images": [img_path],
+            "created_at": datetime.now(),
+            "frame_count": 1
+        }
+        
+        print(f"📹 影片註冊 session 開始: {session_id[:8]}... (bbox: {[x1, y1, x2, y2]})")
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "bbox": [x1, y1, x2, y2],
+            "frame_count": 1,
+            "message": "Session 已建立，請繼續捕捉畫面"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/objects/register-video-frame")
+async def register_video_frame(request: VideoRegisterFrameRequest):
+    """
+    新增影片幀到註冊 session
+    智慧抓取策略：只有當前畫面與已有特徵相似度 < 閾值時才儲存
+    這確保只抓取不同角度的特徵
+    """
+    if detector is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    session = video_registration_sessions.get(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session 不存在或已過期")
+    
+    # 智慧抓取閾值：低於此值才認為是新角度
+    SIMILARITY_THRESHOLD = 0.85
+    
+    try:
+        import base64
+        
+        # 解析圖片
+        image_data = request.image_base64
+        if ',' in image_data:
+            image_data = image_data.split(',')[1]
+        
+        img_bytes = base64.b64decode(image_data)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="無法解析圖片")
+        
+        # 使用儲存的 bbox 裁切
+        x1, y1, x2, y2 = session["bbox"]
+        h, w = img.shape[:2]
+        
+        # 確保 bbox 在當前圖片範圍內
+        x1 = max(0, min(x1, w-1))
+        y1 = max(0, min(y1, h-1))
+        x2 = max(x1+1, min(x2, w))
+        y2 = max(y1+1, min(y2, h))
+        
+        cropped = img[y1:y2, x1:x2]
+        if cropped.size == 0:
+            return {"success": False, "message": "裁切區域無效", "captured": False}
+        
+        # 提取當前幀的特徵
+        current_embedding = detector.feature_extractor.extract(cropped)
+        
+        # 計算與所有已有特徵的最大相似度
+        max_similarity = 0.0
+        for existing_emb in session["embeddings"]:
+            sim = float(np.dot(current_embedding.flatten(), np.array(existing_emb).flatten()))
+            max_similarity = max(max_similarity, sim)
+        
+        # 判斷是否為新角度
+        is_new_angle = max_similarity < SIMILARITY_THRESHOLD
+        
+        if is_new_angle:
+            # 儲存圖片
+            img_dir = os.path.join(os.path.dirname(__file__), "object_images")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            img_name = f"video_reg_{timestamp}.jpg"
+            img_path = os.path.join(img_dir, img_name)
+            cv2.imwrite(img_path, cropped)
+            
+            # 更新 session
+            session["embeddings"].append(current_embedding.tolist())
+            session["images"].append(img_path)
+            session["frame_count"] += 1
+            
+            print(f"📹 新角度已抓取: session {request.session_id[:8]}... (共 {session['frame_count']} 幀, 相似度: {max_similarity:.2%})")
+        
+        return {
+            "success": True,
+            "captured": is_new_angle,
+            "frame_count": session["frame_count"],
+            "similarity": round(max_similarity, 3),
+            "threshold": SIMILARITY_THRESHOLD,
+            "message": f"新角度已抓取 (相似度: {max_similarity:.0%})" if is_new_angle else f"角度相似，跳過 (相似度: {max_similarity:.0%})"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/objects/register-video-finish")
+async def register_video_finish(request: VideoRegisterFinishRequest):
+    """
+    完成影片註冊
+    將所有特徵儲存到物品資料庫
+    """
+    if detector is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    session = video_registration_sessions.get(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session 不存在或已過期")
+    
+    try:
+        import uuid
+        
+        if len(session["embeddings"]) < 1:
+            raise HTTPException(status_code=400, detail="至少需要 1 幀特徵")
+        
+        # 建立新物品
+        obj_id = str(uuid.uuid4())
+        now = int(datetime.now().timestamp() * 1000)
+        
+        # 直接使用 object_registry 建立物品
+        first_embedding = np.array(session["embeddings"][0])
+        obj = detector.object_registry.register(
+            name=request.name,
+            name_zh=request.name_zh,
+            embedding=first_embedding,
+            image_path=session["images"][0] if session["images"] else None
+        )
+        
+        # 新增其餘的 embeddings
+        for i, emb in enumerate(session["embeddings"][1:], start=1):
+            img_path = session["images"][i] if i < len(session["images"]) else None
+            detector.object_registry.add_embedding(
+                obj_id=obj.id,
+                embedding=np.array(emb),
+                image_path=img_path
+            )
+        
+        # 清除 session
+        del video_registration_sessions[request.session_id]
+        
+        print(f"✅ 影片註冊完成: {request.name_zh} (共 {len(session['embeddings'])} 個特徵)")
+        
+        return {
+            "success": True,
+            "message": f"已註冊物品: {request.name_zh}",
+            "object": {
+                "id": obj.id,
+                "name": obj.name,
+                "name_zh": obj.name_zh,
+                "embedding_count": len(session["embeddings"]),
+                "thumbnail": f"/object_images/{os.path.basename(session['images'][0])}" if session["images"] else None
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/objects/register-video-cancel/{session_id}")
+async def register_video_cancel(session_id: str):
+    """取消影片註冊 session"""
+    session = video_registration_sessions.get(session_id)
+    if session:
+        # 刪除暫存圖片
+        for img_path in session.get("images", []):
+            if os.path.exists(img_path):
+                try:
+                    os.remove(img_path)
+                except:
+                    pass
+        del video_registration_sessions[session_id]
+        return {"success": True, "message": "Session 已取消"}
+    else:
+        return {"success": True, "message": "Session 不存在"}
+
+
+@app.post("/api/objects/{obj_id}/add-video-photos")
+async def add_video_photos_finish(obj_id: str, request: VideoAddPhotosFinishRequest):
+    """
+    完成影片新增照片
+    將所有特徵加入到現有物品
+    """
+    if detector is None:
+        raise HTTPException(status_code=503, detail="偵測器未就緒")
+    
+    session = video_registration_sessions.get(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session 不存在或已過期")
+    
+    obj = detector.object_registry.get(obj_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="物品不存在")
+    
+    try:
+        if len(session["embeddings"]) < 1:
+            raise HTTPException(status_code=400, detail="至少需要 1 幀特徵")
+        
+        # 新增所有 embeddings 到現有物品
+        added_count = 0
+        for i, emb in enumerate(session["embeddings"]):
+            img_path = session["images"][i] if i < len(session["images"]) else None
+            detector.object_registry.add_embedding(
+                obj_id=obj_id,
+                embedding=np.array(emb),
+                image_path=img_path
+            )
+            added_count += 1
+        
+        # 清除 session
+        del video_registration_sessions[request.session_id]
+        
+        print(f"✅ 影片新增照片完成: {obj.name_zh} (新增 {added_count} 個特徵)")
+        
+        return {
+            "success": True,
+            "message": f"已新增 {added_count} 張照片",
+            "embedding_count": added_count
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/detect/image", response_model=DetectionResponse)
 async def detect_image(file: UploadFile = File(...)):

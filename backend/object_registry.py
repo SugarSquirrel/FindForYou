@@ -36,18 +36,7 @@ class RegisteredObject:
     def from_dict(data: dict) -> 'RegisteredObject':
         return RegisteredObject(**data)
     
-    def get_average_embedding(self) -> Optional[np.ndarray]:
-        """取得平均特徵向量"""
-        if not self.embeddings:
-            return None
-        
-        embeddings_array = np.array(self.embeddings)
-        avg_embedding = np.mean(embeddings_array, axis=0)
-        # 正規化
-        norm = np.linalg.norm(avg_embedding)
-        if norm > 0:
-            avg_embedding = avg_embedding / norm
-        return avg_embedding
+
 
 
 class ObjectRegistry:
@@ -314,13 +303,12 @@ class ObjectRegistry:
         matches.sort(key=lambda x: x[1], reverse=True)
         return matches
     
-    def get_all_embeddings(self) -> Dict[str, np.ndarray]:
-        """取得所有物品的平均特徵向量"""
+    def get_all_embeddings(self) -> Dict[str, List[np.ndarray]]:
+        """取得所有物品的所有特徵向量（不計算平均值）"""
         result = {}
         for obj_id, obj in self.objects.items():
-            avg_emb = obj.get_average_embedding()
-            if avg_emb is not None:
-                result[obj_id] = avg_emb
+            if obj.embeddings:
+                result[obj_id] = [np.array(emb) for emb in obj.embeddings]
         return result
     
     def to_api_response(self) -> List[Dict[str, Any]]:
