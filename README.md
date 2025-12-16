@@ -148,16 +148,17 @@ DELETE /api/objects/{id}
 本專案支援自訂訓練 YOLOv12 模型以提升特定物品的偵測精度。
 
 ### 訓練配置
-- **模型**: YOLOv12m (medium)
-- **解析度**: 1024x1024
-- **Batch Size**: 4
-- **資料集**: 8 個日常物品類別 (手機、錢包、鑰匙、遙控器、手錶、耳機、杯子、瓶子)
+- **模型**: YOLOv12m (medium) - Transfer Learning 優化版
+- **解析度**: 640x640 (針對小物件優化)
+- **Batch Size**: 16
+- **資料集**: 7 個日常物品類別 (手機、錢包、遙控器、手錶、耳機、杯子、瓶子) - *已移除鑰匙*
+- **策略**: 凍結 Backbone (前 10 層) 以防止 Overfitting
 
 ### 訓練步驟
 
 ```bash
 # 1. 準備資料集
-# 將資料集放置於 ../../datasets/findyou_yolo_clean/
+# 確保資料集位於 ../../datasets/findyou_yolo_clean_cleaned_no_key/
 
 # 2. 激活 conda 環境
 conda activate d2_final

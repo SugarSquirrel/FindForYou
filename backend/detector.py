@@ -82,9 +82,12 @@ CLASS_NAMES_ZH = {
 class ObjectDetector:
     """YOLO12 + DINOv2 物件偵測器 (純推論模式)"""
     
+    # 允許偵測的 COCO 類別 ID (對應 LVIS 需求)
+    ALLOWED_CLASS_IDS = [24, 26, 39, 41, 65, 67, 73]  # backpack, handbag, bottle, cup, remote, cell phone, book
+    
     def __init__(
         self, 
-        model_path: str = "yolo12m.pt",
+        model_path: str = "yolo12l.pt",
         similarity_threshold: float = 0.7
     ):
         self.model_path = model_path
@@ -160,6 +163,10 @@ class ObjectDetector:
                 cls_id = int(box.cls[0])
                 conf = float(box.conf[0])
                 bbox = box.xyxy[0].cpu().numpy().tolist()
+                
+                # 🔥 只保留允許的類別
+                if cls_id not in self.ALLOWED_CLASS_IDS:
+                    continue
                 
                 # 類別名稱
                 class_name = self.model.names[cls_id]

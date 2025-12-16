@@ -247,6 +247,7 @@ class ObjectRegistry:
     ) -> Optional[tuple]:
         """
         在已註冊物品中找到最佳匹配
+        對每個物件的所有特徵向量分別計算相似度，取最大值
         
         Args:
             query_embedding: 查詢特徵向量
@@ -262,15 +263,18 @@ class ObjectRegistry:
         best_sim = 0.0
         
         for obj in self.objects.values():
-            avg_emb = obj.get_average_embedding()
-            if avg_emb is None:
+            if not obj.embeddings:
                 continue
             
-            # 計算餘弦相似度
-            sim = float(np.dot(query_embedding.flatten(), avg_emb.flatten()))
+            # 對該物件的所有特徵向量計算相似度，取最大值
+            max_sim = 0.0
+            for emb in obj.embeddings:
+                emb_array = np.array(emb).flatten()
+                sim = float(np.dot(query_embedding.flatten(), emb_array))
+                max_sim = max(max_sim, sim)
             
-            if sim > best_sim:
-                best_sim = sim
+            if max_sim > best_sim:
+                best_sim = max_sim
                 best_obj = obj
         
         if best_sim >= threshold and best_obj:
@@ -285,6 +289,7 @@ class ObjectRegistry:
     ) -> List[tuple]:
         """
         找到所有超過閾值的匹配物品
+        對每個物件的所有特徵向量分別計算相似度，取最大值
         
         Returns:
             [(物品, 相似度), ...] 按相似度降序排序
@@ -292,14 +297,18 @@ class ObjectRegistry:
         matches = []
         
         for obj in self.objects.values():
-            avg_emb = obj.get_average_embedding()
-            if avg_emb is None:
+            if not obj.embeddings:
                 continue
             
-            sim = float(np.dot(query_embedding.flatten(), avg_emb.flatten()))
+            # 對該物件的所有特徵向量計算相似度，取最大值
+            max_sim = 0.0
+            for emb in obj.embeddings:
+                emb_array = np.array(emb).flatten()
+                sim = float(np.dot(query_embedding.flatten(), emb_array))
+                max_sim = max(max_sim, sim)
             
-            if sim >= threshold:
-                matches.append((obj, sim))
+            if max_sim >= threshold:
+                matches.append((obj, max_sim))
         
         # 按相似度降序排序
         matches.sort(key=lambda x: x[1], reverse=True)
