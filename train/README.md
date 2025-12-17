@@ -1,162 +1,150 @@
 # YOLOv12 訓練模組
 
-本目錄包含 FindForYou 專案的 YOLOv12 物品偵測模型訓練腳本。
+本目錄的文件以 [opt_train12n.py](opt_train12n.py) 為準，描述「LVIS Custom」資料集的防過擬合（freeze + 保守優化器）訓練配置與使用方式。
 
-## 📋 訓練配置
+## 🎯 目標與策略
 
-### 模型規格
-- **架構**: YOLOv12 Medium (yolo12m)
-- **輸入解析度**: 1024x1024 pixels
-- **參數量**: ~25M parameters
-- **Batch Size**: 4
-- **訓練 Epochs**: 100
-- **Early Stopping**: 50 epochs patience
+- 目標：最大化泛化能力、最小化 overfitting 風險
+- 核心：凍結大部分 backbone（`freeze=10`）、搭配 AdamW + 較強正則化、關閉 mosaic/mixup
 
-### 偵測類別 (8 類)
-1. 📱 cell_phone (手機)
-2. 👛 wallet (錢包)
-3. 🔑 key (鑰匙)
-4. 📺 remote_control (遙控器)
-5. ⌚ watch (手錶)
-6. 🎧 earphone (耳機)
-7. ☕ cup (杯子)
-8. 🍶 bottle (瓶子)
+## 📋 訓練配置（對齊腳本）
+
+### 模型與資料
+
+- **模型權重**：`yolo12l.pt`（腳本目前載入 Large 權重）
+- **資料集**：`datasets/lvis_custom_yolo/data.yaml`
+- **輸出位置**：`FindForYou/runs/train/<run_name>/`
+- **run name**：`lvis_yolov12n_freeze20_anti_overfit`
+
+### 偵測類別（13 類，來自 data.yaml）
+
+1. cellular phone
+2. remote control
+3. backpack
+4. handbag
+5. book
+6. bottle
+7. cup
+8. key
+9. watch
+10. earphone
+11. glasses
+12. notebook
+13. mask
 
 ## 🚀 快速開始
 
-### 1. 環境準備
+### 1) 環境準備
 
 ```bash
-# 激活 conda 環境
+# (可選) 進入你的環境
 conda activate d2_final
 
-# 安裝依賴 (如果尚未安裝)
-pip install ultralytics
+# 安裝/更新依賴
+pip install -U ultralytics torch
 ```
 
-### 2. 資料集準備
+### 2) 確認資料集路徑
 
-資料集應放置於：`../../datasets/findyou_yolo_clean/`
+腳本會讀取：`../../datasets/lvis_custom_yolo/data.yaml`（以 repo root 為基準）。
 
-資料集結構：
+資料集結構應如下：
+
 ```
-datasets/findyou_yolo_clean/
-├── data.yaml          # 資料集配置檔
-├── images/
-│   ├── train/        # 訓練影像 (7,782 張)
-│   └── val/          # 驗證影像 (1,100 張)
-└── labels/
-    ├── train/        # 訓練標註 (YOLO 格式)
-    └── val/          # 驗證標註
+datasets/lvis_custom_yolo/
+├── data.yaml
+├── train/
+│   ├── images/
+│   └── labels/
+└── val/
+    ├── images/
+    └── labels/
 ```
 
-**注意**: 資料集檔案因體積過大不包含在 Git 倉庫中。
-
-### 3. 執行訓練
+快速檢查：
 
 ```bash
-cd /path/to/FindForYou/train
-python train_yolov12m.py
+ls ../../datasets/lvis_custom_yolo/data.yaml
 ```
 
-## 📊 訓練參數
+### 3) 執行訓練
 
-| 參數 | 值 | 說明 |
-|------|-----|------|
-| imgsz | 1024 | 訓練影像尺寸 |
-| batch | 4 | Batch size |
-| epochs | 100 | 訓練輪數 |
-| patience | 50 | Early stopping |
-| lr0 | 0.01 | 初始學習率 |
-| lrf | 0.01 | 最終學習率 |
-| weight_decay | 0.0005 | 權重衰減 |
-| optimizer | auto | 自動選擇優化器 (SGD) |
-| amp | True | 混合精度訓練 |
+```bash
+cd /path/to/FP/FindForYou/train
+python opt_train12n.py
+```
+
+## 📊 主要訓練參數（對齊腳本）
+
+| 類別 | 參數 | 值 |
+|---|---:|---:|
+| 核心 | imgsz | 640 |
+| 核心 | batch | 32 |
+| 核心 | freeze | 10 |
+| 迭代 | epochs | 150 |
+| 迭代 | patience | 50 |
+| 最佳化 | optimizer | AdamW |
+| 最佳化 | lr0 | 0.005 |
+| 最佳化 | lrf | 0.001 |
+| 最佳化 | warmup_epochs | 5.0 |
+| 正則化 | weight_decay | 0.001 |
+| 正則化 | dropout | 0.1 |
+| 增強 | mosaic / mixup / copy_paste | 0.0 / 0.0 / 0.0 |
+| 增強 | degrees / translate / scale / shear | 10 / 0.1 / 0.3 / 2.0 |
+| 增強 | perspective / fliplr / flipud | 0.0001 / 0.5 / 0.0 |
+| 增強 | hsv_h / hsv_s / hsv_v | 0.015 / 0.7 / 0.4 |
+| Loss | box / cls / dfl | 7.5 / 0.5 / 1.5 |
+| 系統 | device | 0 |
+| 系統 | workers | 8 |
+| 系統 | cache | True |
+| 系統 | amp | True |
+| 輸出 | save_period | 10 |
 
 ## 💾 訓練輸出
 
-訓練完成後，輸出檔案位於：`../../runs/train/findyou_yolov12m_1024/`
+訓練完成後，輸出會在：`FindForYou/runs/train/lvis_yolov12n_freeze20_anti_overfit/`
+
+常見檔案：
 
 ```
-runs/train/findyou_yolov12m_1024/
+FindForYou/runs/train/lvis_yolov12n_freeze20_anti_overfit/
 ├── weights/
-│   ├── best.pt      # 最佳模型 (mAP 最高)
-│   └── last.pt      # 最後一個 epoch 的模型
-├── results.png      # 訓練曲線圖
-├── confusion_matrix.png  # 混淆矩陣
-├── labels.jpg       # 標籤統計圖
-└── args.yaml        # 訓練參數記錄
-```
-
-## 🎯 效能指標
-
-訓練完成後會顯示以下指標：
-- **mAP50**: IoU=0.5 的平均精度
-- **mAP50-95**: IoU=0.5-0.95 的平均精度
-- **Precision**: 精確率
-- **Recall**: 召回率
-
-## 🔧 調整訓練參數
-
-若遇到 GPU 記憶體不足，可調整以下參數：
-
-```python
-# 在 train_yolov12m.py 中修改
-training_args = {
-    "imgsz": 640,      # 降低解析度
-    "batch": 2,        # 降低 batch size
-    # ...
-}
+│   ├── best.pt
+│   └── last.pt
+├── results.png
+├── confusion_matrix.png
+└── args.yaml
 ```
 
 ## 📝 使用訓練好的模型
 
-訓練完成後，可將模型整合回 backend：
-
 ```python
 from ultralytics import YOLO
 
-# 載入自訓練模型
-model = YOLO('../../runs/train/findyou_yolov12m_1024/weights/best.pt')
-
-# 進行推論
-results = model.predict(image_path, conf=0.5)
+model = YOLO("FindForYou/runs/train/lvis_yolov12n_freeze20_anti_overfit/weights/best.pt")
+results = model.predict("path/to/image.jpg", conf=0.5)
 ```
 
-## ⚠️ 注意事項
+## ⚠️ 注意事項（與腳本一致）
 
-1. **GPU 需求**: 建議使用至少 16GB VRAM 的 GPU
-2. **訓練時間**: RTX 4090 約需 2-3 小時完成 100 epochs
-3. **記憶體管理**: 訓練時會自動使用 AMP (混合精度) 以節省記憶體
-4. **資料快取**: 首次執行會創建標籤快取檔案，加快後續訓練
+- 腳本載入的是 `yolo12l.pt`，但 run name/列印文字仍寫「v12n」；若你是要訓練 nano，請同步調整權重檔名與 run name。
+- run name 內含 `freeze20`，但實際參數是 `freeze=10`；建議將 name 改成和實際 freeze 一致，方便管理實驗。
+- `cache=True` 會加速資料載入但可能增加記憶體壓力；若遇到 RAM/VRAM 壓力，可嘗試改為 `cache=False`。
 
 ## 🐛 常見問題
 
 ### CUDA Out of Memory
-```bash
-# 解決方案：降低 batch size 或解析度
-batch: 2
-imgsz: 640
-```
+
+優先調整：降低 `batch` 或 `imgsz`。
 
 ### 找不到資料集
+
 ```bash
-# 確認資料集路徑正確
-ls ../../datasets/findyou_yolo_clean/data.yaml
+ls ../../datasets/lvis_custom_yolo/data.yaml
 ```
 
 ### ModuleNotFoundError: ultralytics
+
 ```bash
-# 重新安裝 ultralytics
-pip install ultralytics --upgrade
+pip install -U ultralytics
 ```
-
-## 📚 相關資源
-
-- [Ultralytics YOLOv12 文檔](https://docs.ultralytics.com/)
-- [YOLO 格式標註說明](https://docs.ultralytics.com/datasets/detect/)
-- [模型訓練最佳實踐](https://docs.ultralytics.com/modes/train/)
-
-## 📧 支援
-
-如有問題，請提交 Issue 或聯繫專案維護者。
