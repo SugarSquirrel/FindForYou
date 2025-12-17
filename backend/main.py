@@ -10,6 +10,8 @@ import json
 from datetime import datetime
 from typing import List, Optional, Any
 from contextlib import asynccontextmanager
+from urllib.request import urlopen
+from urllib.error import URLError
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,6 +36,52 @@ def _get_public_base_url(request: Request) -> str:
     host = host.split(",")[0].strip()
     scheme = (forwarded_proto or request.url.scheme or "http").split(",")[0].strip()
     return f"{scheme}://{host}"
+
+
+def _get_ngrok_public_url() -> Optional[str]:
+    """Try to get the public ngrok URL from the local ngrok API (default 4040).
+
+    Returns an https URL if available.
+    """
+    try:
+        with urlopen("http://127.0.0.1:4040/api/tunnels", timeout=0.5) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (URLError, TimeoutError, ValueError, OSError):
+        return None
+
+    tunnels = payload.get("tunnels") or []
+    if not isinstance(tunnels, list):
+        return None
+
+    # Prefer https tunnels.
+    for tunnel in tunnels:
+        public_url = tunnel.get("public_url") if isinstance(tunnel, dict) else None
+        if isinstance(public_url, str) and public_url.startswith("https://"):
+            return public_url.rstrip("/")
+    for tunnel in tunnels:
+        public_url = tunnel.get("public_url") if isinstance(tunnel, dict) else None
+        if isinstance(public_url, str) and public_url.startswith("http://"):
+            return public_url.rstrip("/")
+    return None
+
+
+def _get_preferred_public_base_url(request: Request) -> str:
+    """Resolve a shareable public base URL.
+
+    Priority:
+    1) ENV FIND4YOU_PUBLIC_URL (or FIND4YOU_PUBLIC_BASE_URL)
+    2) ngrok local API (if ngrok is running)
+    3) request-derived base URL
+    """
+    env_url = (os.getenv("FIND4YOU_PUBLIC_URL") or os.getenv("FIND4YOU_PUBLIC_BASE_URL") or "").strip()
+    if env_url:
+        return env_url.rstrip("/")
+
+    ngrok_url = _get_ngrok_public_url()
+    if ngrok_url:
+        return ngrok_url
+
+    return _get_public_base_url(request)
 
 
 # ========================================
@@ -183,6 +231,19 @@ async def health_check():
     )
 
 
+@app.get("/api/public-url")
+async def get_public_url(request: Request, path: str = "/"):
+    """Return the preferred public URL for sharing (ngrok if available).
+
+    Useful when the UI is accessed via localhost but you still want to share
+    an ngrok URL.
+    """
+    if not path.startswith("/"):
+        path = "/" + path
+    base_url = _get_preferred_public_base_url(request)
+    return {"success": True, "url": f"{base_url}{path}"}
+
+
 @app.get("/api/qrcode")
 async def get_qrcode(
     request: Request,
@@ -211,7 +272,7 @@ async def get_qrcode(
     else:
         if not path.startswith("/"):
             path = "/" + path
-        base_url = _get_public_base_url(request)
+        base_url = _get_preferred_public_base_url(request)
         url = f"{base_url}{path}"
 
     # Basic sanity: avoid generating huge QRs accidentally.
@@ -967,6 +1028,18 @@ async def serve_frontend():
 async def serve_settings():
     """服務設定頁面"""
     return FileResponse(os.path.join(frontend_path, "settings.html"))
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Avoid 404 noise when browsers request /favicon.ico.
+
+    If a favicon file exists in frontend/, serve it; otherwise return 204.
+    """
+    favicon_path = os.path.join(frontend_path, "favicon.ico")
+    if os.path.exists(favicon_path):
+        return FileResponse(favicon_path)
+    return Response(status_code=204)
 
 
 # ========================================

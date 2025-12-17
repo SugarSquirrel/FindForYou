@@ -441,21 +441,33 @@
         // 分享 QR Code
         // ========================================
 
-        function getShareUrl() {
-            // 由目前瀏覽器看到的 origin 決定（支援 LAN IP / ngrok domain）
+        async function getShareUrl() {
+            // Prefer ngrok URL (or ENV-configured public URL) from backend.
+            try {
+                const res = await fetch(`${API_BASE}/api/public-url?path=/`, { cache: 'no-store' });
+                const data = await res.json();
+                if (data && data.url) return data.url;
+            } catch {
+                // ignore
+            }
+            // Fallback to current origin.
             return `${window.location.origin}/`;
         }
 
-        function refreshShareQr() {
-            const url = getShareUrl();
+        async function refreshShareQr() {
+            const url = await getShareUrl();
             const input = document.getElementById('shareUrlInput');
             const img = document.getElementById('shareQrImg');
             if (input) input.value = url;
             if (img) img.src = `${API_BASE}/api/qrcode?target=${encodeURIComponent(url)}&t=${Date.now()}`;
+
+            if (url.includes('localhost')) {
+                showToast('目前是 localhost；若要 ngrok 請先啟動 ngrok');
+            }
         }
 
         async function copyShareUrl() {
-            const url = getShareUrl();
+            const url = await getShareUrl();
             try {
                 await navigator.clipboard.writeText(url);
                 showToast('已複製分享連結');
