@@ -358,6 +358,31 @@
             </p>
         </div>
 
+        <!-- 分享體驗 (QR Code) -->
+        <div class="card">
+            <h2>📱 分享體驗（QR Code）</h2>
+            <p class="desc">讓同網路的朋友掃描 QR code 直接開啟 FindForYou。手機要使用攝影機通常需要 HTTPS（可用 ngrok）。</p>
+
+            <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+                <div style="background:rgba(255,255,255,0.95); padding:12px; border-radius:12px;">
+                    <img id="shareQrImg" alt="FindForYou QR Code" style="width:180px; height:180px; display:block;" />
+                </div>
+
+                <div style="flex:1; min-width:240px;">
+                    <label style="display:block; color:#aaa; margin-bottom:6px; font-size:14px;">分享連結</label>
+                    <input id="shareUrlInput" type="text" readonly />
+                    <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+                        <button class="btn btn-secondary" onclick="copyShareUrl()">複製連結</button>
+                        <button class="btn btn-secondary" onclick="refreshShareQr()">重新產生</button>
+                    </div>
+                    <div style="color:#888; font-size:12px; margin-top:10px; line-height:1.5;">
+                        小提醒：同網路連線通常是 <code style="color:#aaa;">http://&lt;你的IP&gt;:8000</code>；
+                        若要跨網路/手機攝影機，建議用 ngrok 產生 HTTPS。
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 我的物品 -->
         <div class="card">
             <h2>📦 我的物品</h2>
@@ -411,6 +436,42 @@
 
     <script>
         const API_BASE = '';
+
+        // ========================================
+        // 分享 QR Code
+        // ========================================
+
+        function getShareUrl() {
+            // 由目前瀏覽器看到的 origin 決定（支援 LAN IP / ngrok domain）
+            return `${window.location.origin}/`;
+        }
+
+        function refreshShareQr() {
+            const url = getShareUrl();
+            const input = document.getElementById('shareUrlInput');
+            const img = document.getElementById('shareQrImg');
+            if (input) input.value = url;
+            if (img) img.src = `${API_BASE}/api/qrcode?target=${encodeURIComponent(url)}&t=${Date.now()}`;
+        }
+
+        async function copyShareUrl() {
+            const url = getShareUrl();
+            try {
+                await navigator.clipboard.writeText(url);
+                showToast('已複製分享連結');
+            } catch {
+                // fallback
+                const input = document.getElementById('shareUrlInput');
+                if (input) {
+                    input.focus();
+                    input.select();
+                    document.execCommand('copy');
+                    showToast('已複製分享連結');
+                } else {
+                    showToast('複製失敗，請手動複製');
+                }
+            }
+        }
 
         // ========================================
         // 物品管理
@@ -2006,6 +2067,7 @@
         loadQuickItems();
         loadCameraSettings();
         loadSystemInfo();
+        refreshShareQr();
     </script>
 </body>
 

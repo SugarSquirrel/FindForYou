@@ -17,3 +17,6 @@ torchvision>=0.15.0
 
 # 工具
 python-multipart>=0.0.6
+
+# 分享連結 / QR Code
+qrcode[pil]>=7.4.2

@@ -11,15 +11,29 @@ from datetime import datetime
 from typing import List, Optional, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 import cv2
 import numpy as np
 
 from detector import ObjectDetector
+
+
+def _get_public_base_url(request: Request) -> str:
+    """Best-effort base URL builder.
+
+    Supports reverse proxies / ngrok via X-Forwarded-* headers.
+    """
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host")
+    host = forwarded_host or request.headers.get("host") or "localhost"
+    # Some proxies can provide comma-separated values.
+    host = host.split(",")[0].strip()
+    scheme = (forwarded_proto or request.url.scheme or "http").split(",")[0].strip()
+    return f"{scheme}://{host}"
 
 
 # ========================================
@@ -166,6 +180,56 @@ async def health_check():
         version="2.1.0",
         detector_ready=detector is not None and detector.is_ready,
         registered_objects=registered_count
+    )
+
+
+@app.get("/api/qrcode")
+async def get_qrcode(
+    request: Request,
+    path: str = "/",
+    target: Optional[str] = None,
+    box_size: int = 8,
+    border: int = 2,
+):
+    """Generate a QR code PNG for sharing the app.
+
+    - If `target` is provided, it will be encoded directly.
+    - Otherwise, we will build `base_url + path` from request headers.
+    """
+    try:
+        import io
+
+        import qrcode
+    except Exception:
+        raise HTTPException(
+            status_code=501,
+            detail="QR code feature not installed. Install backend deps: pip install -r requirements.txt",
+        )
+
+    if target:
+        url = target
+    else:
+        if not path.startswith("/"):
+            path = "/" + path
+        base_url = _get_public_base_url(request)
+        url = f"{base_url}{path}"
+
+    # Basic sanity: avoid generating huge QRs accidentally.
+    if len(url) > 2048:
+        raise HTTPException(status_code=400, detail="URL too long")
+
+    qr = qrcode.QRCode(box_size=max(1, min(int(box_size), 20)), border=max(1, min(int(border), 10)))
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="image/png",
+        headers={"Cache-Control": "no-store"},
     )
 
 
