@@ -1,4 +1,4 @@
-# FindForYou - Vision-Driven Assistive System for Seniors’ Lost Belongings
+# FindForYou - Vision-Driven Assistive System for Seniors’ Lost Belongings
 
 
 使用 **YOLO12 + DINOv2** 個人化物件偵測技術，幫助你快速找到家中日常生活用品。
